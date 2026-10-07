@@ -2,11 +2,11 @@
   "name": "jikeika-review",
   "version": "3.9.0",
   "private": true,
-  "description": "自計化レビュー：月次PL・BSの目次と、過去の仕訳からの取引先別期首推定",
+  "description": "自計化レビュー：freeeのタグ別（取引先・品目・部門）月次BS・PLの取り込みと分析、対応の順番",
   "scripts": {
     "build": "python3 build.py",
     "fixtures": "node tests/make-fixtures.js",
-    "test": "node --test tests/party-opening.test.js tests/variance.test.js",
-    "test:ui": "node tests/ui-smoke.js && node tests/ui-import.js"
+    "test": "node --test tests/*.test.js",
+    "test:ui": "node tests/ui-smoke.js && node tests/ui-import.js && node tests/ui-data.js"
   }
 }

@@ -1,1 +1,41 @@
-/* v39-monthly */
+/* v39-monthly：月次PL・BSの「表示するタグ」（freeeと同じ）と内訳行 */
+.vt-tagbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;margin:0 0 8px;padding:8px 10px;border:1px solid var(--stmt-rule,#c9c9c9);border-radius:8px;background:color-mix(in srgb,var(--ink) 2.5%,var(--white));font-size:12px;min-width:0}
+.vt-tagseg{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0}
+.vt-tagbar-label{font-weight:600;margin-right:4px;white-space:nowrap}
+.vt-tagseg .btn{display:inline-flex;align-items:center;gap:4px}
+.vt-tagseg .btn[aria-pressed=true]{background:var(--firm-orange,#ff9900);color:#241a0c;border-color:var(--firm-orange,#ff9900)}
+.vt-tagseg .btn[disabled]{opacity:.45;cursor:not-allowed}
+.vt-src{font-size:10px;line-height:1.3;padding:0 4px;border-radius:3px;border:1px solid currentColor;opacity:.75;font-weight:400}
+.vt-src.report,.vt-tagseg .btn[aria-pressed=true] .vt-src{opacity:1}
+.vt-tagopts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;min-width:0}
+.vt-tagopts label{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.vt-tagopts select,.vt-tagopts input[type=search]{font:inherit;font-size:12px;padding:3px 6px;border:1px solid var(--stmt-rule,#c9c9c9);border-radius:5px;background:var(--white);color:var(--ink)}
+.vt-search input{width:15em;max-width:100%}
+.vt-tagnote{flex-basis:100%;margin:0;color:var(--muted);line-height:1.6}
+.vt-printnote{display:none}
+.stmt-table tr.vt-tag .vt-taglabel .stmt-flag{flex:none;font-size:9.5px}
+.stmt-table tr.vt-tag .vt-jflag{color:var(--amber);border-color:currentColor}
+.stmt-table td.vt-jdiff .stmt-num{text-decoration:underline dotted var(--amber);text-underline-offset:3px}
+.stmt-table tr.vt-note .vt-wrap span{white-space:normal;overflow:visible;line-height:1.45;padding:3px 0}
+.stmt-table tr.vt-sem .vt-wrap span{color:var(--amber);font-style:normal}
+.stmt-table tr.vt-untagged .vt-wrap span{font-style:normal}
+/* ページ送りは横スクロールしない左端の列（sticky）に置く：表の幅いっぱいに広がらない */
+.stmt-table tr.vt-pager th.stmt-acct{white-space:normal}
+.vt-pagerin{display:flex;flex-direction:column;align-items:flex-start;gap:3px;padding:4px 8px 6px 32px}
+.vt-pagerin .btn{white-space:normal;text-align:left}
+.vt-pagerin .small{color:var(--muted);line-height:1.4}
+.notice.vt-sticky{position:sticky;left:0;box-sizing:border-box;width:min(1080px,calc(100vw - 110px));white-space:normal;text-align:left}
+.vt-reasonlist .vt-wait{margin:2px 0}
+@media(max-width:720px){
+ .vt-tagbar{gap:8px;padding:8px}
+ .vt-tagopts{width:100%}
+ .vt-search{flex:1 1 100%}
+ .vt-search input{flex:1;width:auto;min-width:0}
+ .vt-pagerin{padding-left:22px}
+ .notice.vt-sticky{width:calc(100vw - 60px)}
+}
+@media print{.vt-tagbar,.vt-pager{display:none!important}.vt-printnote{display:block;font-size:9pt;margin:0 0 4px}}
+html.printing-stmt #stmtPrint .vt-tagbar,html.printing-stmt #stmtPrint .vt-pager{display:none!important}
+html.printing-stmt #stmtPrint .vt-printnote{display:block;font-size:9pt;margin:0 0 4px}
+html.printing-stmt #stmtPrint .notice.vt-sticky{position:static;width:auto}
+.stmt-table tr.vt-untagged .vt-wrap small{font-size:10px;margin-left:2px}

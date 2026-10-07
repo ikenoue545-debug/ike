@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """土台（base/ の v3.6 単一HTML）に src/ の変更を組み込み、dist/ に配布用の1ファイルを作る。
 
-  python3 build.py            # dist/自計化レビュー_v3.7.html を作る
+  python3 build.py            # dist/自計化レビュー_v3.9.html を作る
   python3 build.py --check    # src/ を変更していなければ base と同じになることを確かめる
 
 - src/ の既存モジュール（tools/blocks.py の MODULES）は、base の同じ <script> ブロックと置き換える。
@@ -16,17 +16,22 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from blocks import MODULES, find_block  # noqa: E402
 
 BASE = ROOT / 'base' / 'jikeika-review-v3.6.html'
-OUT = ROOT / 'dist' / '自計化レビュー_v3.7.html'
-VERSION = '3.7.0'
+OUT = ROOT / 'dist' / '自計化レビュー_v3.9.html'
+VERSION = '3.9.0'
 
 # (src のファイル, このブロックの直後に置く目印)
 NEW_SCRIPTS = [
+    ('tag-reports.js', 'root.ReviewFinancial='),
     ('party-opening.js', 'root.ReviewTreasuryFindings='),
+    ('tag-analysis.js', 'root.ReviewPartyOpening='),
+    ('feedback-order.js', 'root.ReviewTagAnalysis='),
     ('party-opening-ui.js', 'root.ReviewTreasuryUI='),
-    ('monthly-toc.js', 'root.ReviewPartyOpeningUI='),
+    ('tag-analysis-ui.js', 'root.ReviewPartyOpeningUI='),
+    ('feedback-order-ui.js', 'root.ReviewTagAnalysisUI='),
+    ('monthly-toc.js', 'root.ReviewFeedbackOrderUI='),
 ]
 # 追加のスタイル（最初の <style> の末尾に足す）
-STYLES = ['v37.css']
+STYLES = ['v37.css', 'v39-tags.css', 'v39-monthly.css', 'v39-perf.css', 'v39-feedback.css']
 # (説明, 元の文字列, 新しい文字列)
 PATCHES = [
     ('version label', '<span class="version">MULTI-COMPANY · 3.6.0</span>', f'<span class="version">MULTI-COMPANY · {VERSION}</span>'),

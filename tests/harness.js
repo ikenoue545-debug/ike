@@ -5,7 +5,7 @@ const fs=require('fs'),path=require('path'),vm=require('vm');
 const ROOT=path.join(__dirname,'..');
 function scripts(html){return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);}
 // 既定では dist の配布ファイル（build.py の出力）から、画面以外のモジュールと月次画面を読み込む。
-const DIST=path.join(ROOT,'dist','自計化レビュー_v3.7.html');
+const DIST=path.join(ROOT,'dist','自計化レビュー_v3.9.html');
 function load(htmlPath=DIST){
  const ctx={console,Intl,Date,Math,JSON,Map,Set,WeakMap,WeakSet,Promise,TextDecoder,setTimeout,clearTimeout,Number,String,Array,Object,Error,RegExp,Symbol};ctx.globalThis=ctx;vm.createContext(ctx);
  const html=fs.readFileSync(htmlPath,'utf8');

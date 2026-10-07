@@ -1172,6 +1172,14 @@ section.monthly-panel h2:focus{outline:none}
 .po-table>tbody>tr>td:empty{display:none}.po-table>tbody>tr>td.po-wide{grid-column:1/-1}
 .po-why[open]{width:100%}.po-why .tablewrap{overflow-x:auto}}
 @media print{.po-why[open] .ts-evidence{display:none}.po-panel .tablewrap{overflow:visible!important;max-height:none!important}.po-table{min-width:0;width:100%}.po-table th,.po-table td{min-width:0!important;padding:4px 5px;font-size:9px;color:#000!important}.po-table .ts-negative{color:#000!important}.po-why:not([open]){display:none}.po-cards{grid-template-columns:repeat(3,1fr)}}
+
+/* v39-tags */
+
+/* v39-monthly */
+
+/* v39-perf */
+
+/* v39-feedback */
 </style>
 </head>
 <body>
@@ -1253,12 +1261,13 @@ const TYPES={
  unregistered:{name:'未登録明細',desc:'取引日・摘要・金額1列の明細。入金／出金が別列ならテンプレートの金額列に統合してください。',fields:{date:['取引日','日付','明細日'],description:['摘要','取引内容','備考','内容'],party:['取引先','取引先名'],amount:['金額','出金額','支出金額','支払金額','入金額','収入金額']},required:['date','amount']},
  balances:{name:'月末残高一覧',desc:'月・科目・残高の縦形式。資料残高を追加すると差額を照合します。',fields:{date:['月','年月','日付','基準日'],account:['勘定科目','科目','口座'],party:['取引先','契約','品目'],balance:['帳簿残高','残高','月末残高'],expected:['資料残高','実際残高','予定残高']},required:['date','account','balance']},
  aging:{name:'債権債務・期日一覧',desc:'科目・取引先・期日・決済残額。売掛金は月次PL・BS画面で基準日と全件の範囲を確認します。',fields:{date:['発生日','取引日','日付'],account:['勘定科目','科目'],party:['取引先','取引先名'],due:['期日','入金予定日','支払予定日','決済期日','回収期日'],amount:['未決済額','決済残額','未決済残額','残高','未決済金額','金額'],asOf:['基準日','残高基準日','確認基準日'],invoice:['請求書番号','管理番号','取引番号']},required:['account','due','amount']},
- monthlyPL:{name:'月次PL（単月）',desc:'freee月次推移の損益計算書CSV。円単位・分類と科目を同じ列・科目内訳を閉じて出力。年付き月の横形式、月・科目・金額の縦形式に対応。期間累計は月別とは別に保存・照合します。',fields:{account:['勘定科目','科目','勘定科目名','科目名','分類・勘定科目','分類と勘定科目'],accountCode:['勘定科目コード','科目コード'],reportedTotal:['期間累計','期間合計'],date:['月','年月','対象月'],amount:['金額','月次金額','残高'],category:['分類','分類名','区分'],party:['取引先','取引先名']},required:['account']},
- monthlyBS:{name:'月次BS（月末残高）',desc:'freee月次推移の貸借対照表CSV。科目コード・見出しの空の科目名・期首列も読み取り、各月末残高と照合。期首の年月は帳票に明記された期間から対応します。',fields:{account:['勘定科目','科目','勘定科目名','科目名','分類・勘定科目','分類と勘定科目'],accountCode:['勘定科目コード','科目コード'],opening:['期首','期首残高'],date:['月','年月','対象月'],amount:['金額','月次金額','残高','月末残高'],category:['分類','分類名','区分'],party:['取引先','取引先名']},required:['account']}
+ monthlyPL:{name:'月次PL（単月）',desc:'freee月次推移の損益計算書CSV（円単位・分類と勘定科目は同じ列）。「表示するタグ」は なし・取引先・品目・部門 のどれでも読めます。タグ別の内訳は科目合計とは別に保存し、二重に数えません。年付き月の横形式、月・科目・金額の縦形式に対応。期間累計は月別とは別に保存・照合します。',fields:{account:['勘定科目','科目','勘定科目名','科目名','分類・勘定科目','分類と勘定科目'],accountCode:['勘定科目コード','科目コード'],reportedTotal:['期間累計','期間合計'],date:['月','年月','対象月'],amount:['金額','月次金額','残高'],category:['分類','分類名','区分'],party:['取引先','取引先名']},required:['account']},
+ monthlyBS:{name:'月次BS（月末残高）',desc:'freee月次推移の貸借対照表CSV（円単位・分類と勘定科目は同じ列）。「表示するタグ」は なし・取引先・品目・部門 のどれでも読めます。タグ別に出力したCSVは、科目合計とタグ別の内訳を分けて保存し、取引先別・品目別・部門別を並べて持てます。',fields:{account:['勘定科目','科目','勘定科目名','科目名','分類・勘定科目','分類と勘定科目'],accountCode:['勘定科目コード','科目コード'],opening:['期首','期首残高'],date:['月','年月','対象月'],amount:['金額','月次金額','残高','月末残高'],category:['分類','分類名','区分'],party:['取引先','取引先名']},required:['account']}
 };
 TYPES.prior.fields=TYPES.current.fields;TYPES.prior.required=TYPES.current.required;
 TYPES.priorPL={...TYPES.monthlyPL,name:'前期・過去のPL',desc:'同じ顧客の前期・過去の単月PL。帳票に記載された年度・年月で保存し、当期PLを上書きしません。',fields:{...TYPES.monthlyPL.fields},required:[...TYPES.monthlyPL.required]};
 TYPES.priorBS={...TYPES.monthlyBS,name:'前期・過去のBS',desc:'同じ顧客の前期・過去のBS。前期末と当期の期首残高のつながりを確認。対象開始月より前の帳票を当期BSと分けて保存します。',fields:{...TYPES.monthlyBS.fields},required:[...TYPES.monthlyBS.required]};
+const TAG_KEYS=['party','item','department','segment1','segment2','segment3'];
 function reportType(type){return ['monthlyPL','priorPL'].includes(type)?'monthlyPL':['monthlyBS','priorBS'].includes(type)?'monthlyBS':null;}
 const LABELS={reportedTotal:'CSVの期間累計（月別とは別・任意）',accountCode:'勘定科目コード（任意）',opening:'期首残高（BS・任意）',date:'取引日／月',id:'仕訳番号',exportNo:'CSV内の仕訳No.（複合仕訳のまとまり）',debit:'借方科目',debitAmount:'借方金額',credit:'貸方科目',creditAmount:'貸方金額',party:'取引先',debitParty:'借方取引先',creditParty:'貸方取引先',description:'摘要',debitTax:'借方税区分',creditTax:'貸方税区分',amount:'金額',account:'勘定科目',category:'分類（任意）',balance:'帳簿残高',expected:'資料残高（任意）',due:'決済期日',asOf:'未決済額の基準日（任意）',invoice:'請求書・管理番号（任意）'};
 const normalize=s=>String(s??'').normalize('NFKC').trim();
@@ -1457,7 +1466,7 @@ function analyze(session){
  for(const g of pl.values())for(const m of months)if(!observedMonths.has(m))g.values[m]=null;
  return {findings,months,current,coverage,pl:[...pl.values()],endDate,history,journalBalances,financial};
 }
-function newSession(){return {schema:1,project:{name:'新しい自計化レビュー',type:'individual',start:'2026-01',end:'2026-06',large:100000,variance:.5,complete:false},datasets:{current:[],prior:[],unregistered:[],balances:[],aging:[],monthlyPL:[],monthlyBS:[],priorPL:[],priorBS:[]},financial:{comparisonConfirmed:false,agingAsOf:'',agingComplete:false,accountRoles:{}},imports:[],decisions:{},manual:{},history:{sources:{},excludeAdjustments:true},teacher:{turns:[]},updatedAt:null,demo:false};}
+function newSession(){return {schema:1,project:{name:'新しい自計化レビュー',type:'individual',start:'2026-01',end:'2026-06',large:100000,variance:.5,complete:false},datasets:{current:[],prior:[],unregistered:[],balances:[],aging:[],monthlyPL:[],monthlyBS:[],priorPL:[],priorBS:[]},tagReports:[],financial:{comparisonConfirmed:false,agingAsOf:'',agingComplete:false,accountRoles:{}},imports:[],decisions:{},manual:{},history:{sources:{},excludeAdjustments:true},teacher:{turns:[]},updatedAt:null,demo:false};}
 function demoSession(){const s=newSession();s.project.name='さいとう事務所｜操作サンプル（架空）';s.project.complete=true;s.demo=true;let i=1;const add=(dt,d,c,n,p,x)=>s.datasets.current.push({date:dt,id:String(i++),hasId:true,debit:d,credit:c,debitAmount:n,creditAmount:n,party:p,debitParty:'',creditParty:'',description:x,source:'操作サンプル',line:i});
  for(let m=1;m<=6;m++){const mo=String(m).padStart(2,'0');add(`2026-${mo}-25`,'給料手当','未払金',m===6?620000:280000,'従業員','給与計上');if(m!==4)add(`2026-${mo}-27`,'地代家賃','普通預金',98000,'東都不動産','事務所家賃');add(`2026-${mo}-28`,'売掛金','売上高',m===5?180000:520000,'青山商事','業務報酬');add(`2026-${mo}-15`,'通信費','普通預金',11000,'通信サービス','月額通信費');}
  add('2026-03-08','消耗品費','普通預金',198000,'PCショップ','ノートPC');add('2026-05-10','修繕費','普通預金',330000,'設備工事','事務所内装');add('2026-02-14','租税公課','普通預金',46000,'市区町村','本人の住民税');add('2026-03-22','法定福利費','普通預金',17100,'年金機構','国民年金（事業主本人）');add('2026-06-02','旅費交通費','普通預金',8800,'JR','出張交通費');add('2026-06-02','旅費交通費','普通預金',8800,'JR','出張交通費');
@@ -1504,6 +1513,11 @@ function validateSession(x){
      else if(!date(r.date)||!Number.isSafeInteger(r.amount))throw Error('明細データが不正です。金額は正確な円整数が必要です。');
    }s.datasets[type]=a;
  }
+ // 月次PL・BSの「表示するタグ」別の内訳（BSの取引先別は従来どおり datasets.monthlyBS/priorBS）。科目合計には足さない別の置き場。
+ const tagReports=x.tagReports===undefined?[]:x.tagReports;
+ if(!Array.isArray(tagReports)||tagReports.length>300000)throw Error('タグ別の帳票データが不正です。');
+ for(const r of tagReports)if(!r||typeof r!=='object'||Array.isArray(r)||!['monthlyPL','monthlyBS','priorPL','priorBS'].includes(r.type)||!TAG_KEYS.includes(r.tagDimension)||reportType(r.type)==='monthlyBS'&&r.tagDimension==='party'||typeof r.tagValue!=='string'||!r.tagValue.trim()||!date(r.date,true)||typeof r.account!=='string'||!r.account||r.amount!==null&&!Number.isSafeInteger(r.amount)||![1,1000].includes(r.unit)||r.opening!==undefined&&typeof r.opening!=='boolean'||['accountCode','category','importSource','source','role'].some(k=>r[k]!==undefined&&typeof r[k]!=='string'))throw Error('タグ別の帳票データが不正です。');
+ s.tagReports=tagReports;
  s.financial=root.ReviewFinancial?.validateSettings(x.financial)||s.financial;
  if(x.history){
    s.history.excludeAdjustments=x.history.excludeAdjustments!==false;
@@ -1877,8 +1891,33 @@ function reportMoney(value,unit){
  const n=E.monetary(value,unit);return {value:n,valid:n===null||Number.isSafeInteger(n)};
 }
 function reportSum(values){if(!values.every(Number.isSafeInteger))return null;const n=Number(values.reduce((s,v)=>s+BigInt(v),0n));return Number.isSafeInteger(n)?n:null;}
+// freee の月次推移で「表示するタグ」を選んだときの見出し（3列目）。1ファイルに1種類。
+const TAG_DIMS=Object.freeze({party:'取引先',item:'品目',department:'部門',segment1:'セグメント1',segment2:'セグメント2',segment3:'セグメント3'});
+function tagDimensionOf(label){const k=key(label);if(/^取引先(?:名)?$/.test(k))return 'party';if(k==='品目')return 'item';if(k==='部門')return 'department';const m=k.match(/^セグメント([1-3])$/);return m?'segment'+m[1]:null;}
+function tagColumn(headers,mapping,cols){
+ const limit=cols.length?cols[0].index:headers.length,found=headers.slice(0,limit).map((x,index)=>({index,dim:tagDimensionOf(x)})).filter(x=>x.dim);
+ if(mapping.party>=0&&!found.some(x=>x.index===mapping.party))found.push({index:mapping.party,dim:'party'});
+ return found;
+}
+// 科目ごと・月ごとに「内訳の合計＝科目合計」を確かめる。千円の帳票は行ごとの切捨てがあるので、内訳の件数×1,000円まで許す。
+function reconcileTags(items,type,unit){
+ const by=new Map();
+ for(const r of items){const a=key(r.account);let g=by.get(a);if(!g)by.set(a,g={account:r.account,parent:new Map(),tags:new Map(),names:new Set(),unselected:false,role:r.role,code:r.accountCode});
+  if(r.tagDimension){const m=g.tags.get(r.date)||[];m.push(r.amount);g.tags.set(r.date,m);g.names.add(key(r.tagValue));if(/^(?:未選択|取引先未選択)$/.test(key(r.tagValue))&&r.amount)g.unselected=true;}
+  else g.parent.set(r.date,r.amount);}
+ const mismatches=[],dropped=new Set(),residual=[],untagged=[],missing=[];let checked=0,partial=0;
+ for(const [a,g] of by){
+  if(!g.tags.size){if(g.parent.size&&g.code&&g.role!=='summary')missing.push(g.account);continue;}
+  if(!g.parent.size)continue;checked++;const tol=unit===1000?g.names.size*1000:0;
+  // 空欄（未読込）を含む月は0円とみなさず、照合しない
+  for(const [m,total] of g.parent){if(!Number.isSafeInteger(total))continue;const vs=g.tags.get(m)||[];if(!vs.length||vs.some(v=>!Number.isSafeInteger(v))){if(vs.some(Number.isSafeInteger))partial++;continue;}const sum=reportSum(vs);if(sum===null)continue;const diff=reportSum([total,-sum]);if(diff!==null&&Math.abs(diff)>tol){mismatches.push({account:g.account,month:m,total,sum,diff});dropped.add(a);}}
+  if(g.names.size===1&&[...g.names][0].match(/^(?:未選択|取引先未選択)$/))untagged.push(g.account);
+  else if(type==='monthlyBS'&&g.unselected)residual.push(g.account);
+ }
+ return {checked,mismatches,dropped,residual,untagged,missing,partial};
+}
 function normalizeReports(rows,type,mapping,h,cfg,options={}){
- const items=[],errors=[],warnings=[],reportedTotals=[],headers=rows[h],seen=new Set(),meta=reportMetadata(rows,h),datedCfg=meta.periodValid?{...cfg,start:meta.start,end:meta.end}:options.priorReport||options.requireReportYear?{...cfg,start:'',end:''}:cfg,cols=monthColumns(headers,datedCfg);let section='';
+ const items=[],errors=[],warnings=[],reportedTotals=[],detailReportedTotals=[],headers=rows[h],seen=new Set(),meta=reportMetadata(rows,h),datedCfg=meta.periodValid?{...cfg,start:meta.start,end:meta.end}:options.priorReport||options.requireReportYear?{...cfg,start:'',end:''}:cfg,cols=monthColumns(headers,datedCfg);let section='';
  const get=(r,k)=>mapping[k]>=0?clean(r[mapping[k]]):'';
  const unit=options.unit===1000?1000:1;
  const totalIndex=type==='monthlyPL'&&cols.length?(mapping.reportedTotal??-1):-1;
@@ -1897,25 +1936,28 @@ function normalizeReports(rows,type,mapping,h,cfg,options={}){
  if([...cols.map(c=>c.index),mapping.accountCode,mapping.opening,mapping.date,mapping.amount,mapping.reportedTotal].filter(i=>i>=0).includes(mapping.account))return fatal('勘定科目列に年月・金額・科目コードの列が指定されています。勘定科目名の列を選択してください。');
  if(new Set(cols.map(x=>x.month)).size!==cols.length)return {items,errors:[{line:h+1,fields:['同じ年月の列が複数あります。年度・月の見出しを確認してください']}],headers,warnings};
  const mapped=new Set([...Object.values(mapping),...cols.map(c=>c.index)].filter(i=>i>=0));
- const detailColumns=headers.map((x,index)=>({name:key(x),index})).filter(x=>/^(?:取引先(?:名)?|品目|部門|メモタグ|タグ|セグメント|内訳|補助科目)$/.test(x.name));
+ const tagCols=tagColumn(headers,mapping,cols);
+ if(tagCols.length>1)return fatal('「表示するタグ」の列が複数あります（'+tagCols.map(x=>TAG_DIMS[x.dim]).join('・')+'）。freeeで表示するタグを1種類ずつ選んで、別々のCSVに出力してください。');
+ const tagIndex=tagCols.length?tagCols[0].index:-1,tagDim=tagCols.length?tagCols[0].dim:null;
+ const detailColumns=headers.map((x,index)=>({name:key(x),index})).filter(x=>x.index!==tagIndex&&/^(?:取引先(?:名)?|品目|部門|メモタグ|タグ|セグメント\d?|内訳|補助科目)$/.test(x.name));
  const unknownColumns=cols.length?headers.slice(0,cols[0].index).map((x,index)=>index).filter(i=>!mapped.has(i)):[];
  // Explicit account + party columns identify an authoritative BS detail.
  // Unlabeled native hierarchy and all other detail dimensions are ambiguous.
- const expanded=rows.slice(h+1).some(raw=>detailColumns.some(c=>!(type==='monthlyBS'&&c.index===mapping.party)&&clean(raw[c.index]))||unknownColumns.some(i=>clean(raw[i]))||/^(?:🏷|\[?(?:取引先|品目|部門|メモタグ)\]?\s*[:：])/.test(get(raw,'account')));
- if(expanded)return fatal('取引先・品目・部門などの内訳、または未対応の階層列が含まれています。科目合計と内訳の二重計上を防ぐため、freeeで内訳をすべて閉じ、「分類と科目を同じ列」にして円単位の月次推移を再出力してください。');
+ const unknownTag=unknownColumns.filter(i=>i!==tagIndex);
+ const expanded=rows.slice(h+1).some(raw=>detailColumns.some(c=>clean(raw[c.index]))||unknownTag.some(i=>clean(raw[i]))||/^(?:🏷|\[?(?:取引先|品目|部門|メモタグ)\]?\s*[:：])/.test(get(raw,'account')));
+ if(expanded)return fatal(detailColumns.some(c=>/^(?:メモタグ|タグ)$/.test(c.name))?'メモタグ別の帳票は、1つの仕訳に複数のメモタグが付くと科目合計と合わないため取り込めません。「表示するタグ」を取引先・品目・部門のいずれかにして出力してください。':'取り込めない内訳・階層の列があります。freeeの月次推移で「分類と勘定科目」を「同じ列にする（一列）」、「表示するタグ」を なし・取引先・品目・部門 のいずれか1つにして、円単位で再出力してください。');
  const hasBare=cols.some(x=>/^\d{1,2}月$/.test(clean(headers[x.index])));if(hasBare)warnings.push(meta.periodValid?'年のない月見出しは、帳票タイトルに記載された期間から年度を対応しました。プレビューの年月を確認してください。':'年のない月見出しは、設定した対象期間から年度を対応しました。プレビューの年月を確認してください。');
  if(unit===1000)warnings.push('千円の帳票です。円換算して表示しますが、切捨て済みの概数なので仕訳との厳密な金額照合は保留します。');
  for(let i=h+1;i<rows.length;i++){
   const raw=rows[i];if(raw.every(x=>!clean(x)))continue;
   let account=get(raw,'account').replace(/^[▶▷►▸▼▽◆■●\s]+/,'');
-  const accountCode=get(raw,'accountCode'),openingRaw=openingIndex>=0?String(raw[openingIndex]??''):'',tagValue=type==='monthlyBS'?get(raw,'party'):'';
+  const accountCode=get(raw,'accountCode'),openingRaw=openingIndex>=0?String(raw[openingIndex]??''):'',tagValue=tagIndex>=0?clean(raw[tagIndex]):'';
   const reportedTotalRaw=totalIndex>=0?String(raw[totalIndex]??''):'',hasTotal=!!clean(reportedTotalRaw);
   const category=get(raw,'category')||section;
   const amounts=cols.length?cols.map(x=>({date:x.month,value:raw[x.index]})):[{date:period(get(raw,'date'),datedCfg),value:get(raw,'amount')}];
   if(openingDate)amounts.unshift({date:openingDate,value:openingRaw,opening:true});
   if(isSection(account)&&amounts.every(x=>!clean(x.value))&&!hasTotal){section=account;continue;}
   if(!account){if(amounts.some(x=>clean(x.value))||hasTotal)errors.push({line:i+1,fields:['勘定科目']});continue;}
-  if(type!=='monthlyBS'&&get(raw,'party')){errors.push({line:i+1,fields:['取引先内訳は科目合計と二重になるため取り込めません。内訳を閉じて出力してください']});continue;}
   if(isSection(account)&&!/^事業主[貸借]$/.test(key(account))&&amounts.some(x=>clean(x.value))){section=account;account+=' 計';}
   const parsedTotal=reportMoney(reportedTotalRaw,unit),reportedTotal=hasTotal?parsedTotal.value:null;
   if(hasTotal&&!parsedTotal.valid){errors.push({line:i+1,fields:['期間累計の金額（正確な円整数と桁区切りを確認）']});continue;}
@@ -1924,24 +1966,30 @@ function normalizeReports(rows,type,mapping,h,cfg,options={}){
    if(complete&&calculated===null)errors.push({line:i+1,fields:['月別合計が正確に計算できる円整数の上限を超えています']});
    const difference=Number.isSafeInteger(calculated)&&Number.isSafeInteger(reported)?reportSum([calculated,-reported]):null;
    if(Number.isSafeInteger(calculated)&&Number.isSafeInteger(reported)&&difference===null)errors.push({line:i+1,fields:['期間累計差額が正確に計算できる円整数の上限を超えています']});
-   reportedTotals.push({account,months:cols.map(c=>c.month),reported,calculated,difference});
-   if(difference!==null&&Math.abs(difference)>.01)warnings.push(account+'の期間累計とCSVの月別合計に差額 '+difference.toLocaleString()+'円があります。帳票の表示方法と読込範囲を確認してください。');
+   (tagValue?detailReportedTotals:reportedTotals).push({account,months:cols.map(c=>c.month),reported,calculated,difference,...(tagValue?{tagDimension:tagDim,tagValue}:{})});
+   if(difference!==null&&Math.abs(difference)>.01)warnings.push(account+(tagValue?' / '+tagValue:'')+'の期間累計とCSVの月別合計に差額 '+difference.toLocaleString()+'円があります。帳票の表示方法と読込範囲を確認してください。');
   }
   for(const cell of amounts){
    if(!cell.date){errors.push({line:i+1,fields:['年付きの月']});continue;}
    const parsed=reportMoney(cell.value,unit),n=parsed.value;
    if(!parsed.valid){errors.push({line:i+1,fields:[`${cell.date} の金額（正確な円整数と桁区切りを確認）`]});continue;}
-   const id=JSON.stringify([cell.date,key(account),tagValue?'party':'',key(tagValue)]);if(seen.has(id)){errors.push({line:i+1,fields:[`${cell.date} ${account}${tagValue?' / '+tagValue:''} の重複（合計と内訳を確認）`]});continue;}seen.add(id);
-   items.push({date:cell.date,account,accountCode,category,amount:n,role:inferRole(account,type,category),statement:type==='monthlyPL'?'PL':'BS',unit,approximate:unit===1000,basis:type==='monthlyPL'?'monthly':'closing',line:i+1,...(tagValue?{tagDimension:'party',tagValue}:{}),...(cell.opening?{opening:true}:{}),...(openingIndex>=0?{openingRaw}:{}),...(meta.periodValid?{reportStart:meta.start,reportEnd:meta.end}:{}),...(meta.entity?{reportEntity:meta.entity}:{}),...(totalIndex>=0?{reportedTotal,reportedTotalRaw,reportedTotalMonths:cols.map(c=>c.month)}:{})});
+   const id=JSON.stringify([cell.date,key(account),tagValue?tagDim:'',key(tagValue)]);if(seen.has(id)){errors.push({line:i+1,fields:[`${cell.date} ${account}${tagValue?' / '+tagValue:''} の重複（合計と内訳を確認）`]});continue;}seen.add(id);
+   items.push({date:cell.date,account,accountCode,category,amount:n,role:inferRole(account,type,category),statement:type==='monthlyPL'?'PL':'BS',unit,approximate:unit===1000,basis:type==='monthlyPL'?'monthly':'closing',line:i+1,...(tagValue?{tagDimension:tagDim,tagValue}:{}),...(cell.opening?{opening:true}:{}),...(openingIndex>=0?{openingRaw}:{}),...(meta.periodValid?{reportStart:meta.start,reportEnd:meta.end}:{}),...(meta.entity?{reportEntity:meta.entity}:{}),...(totalIndex>=0?{reportedTotal,reportedTotalRaw,reportedTotalMonths:cols.map(c=>c.month)}:{})});
   }
  }
  if(items.some(r=>r.amount===null))warnings.push('空欄は0円にせず「未読込」として残します。');
+ const tagCheck=tagDim?reconcileTags(items,type,unit):null;
+ if(tagCheck?.dropped.size){
+  const ex=tagCheck.mismatches.slice(0,4).map(x=>x.account+' '+x.month+'：科目合計 '+x.total.toLocaleString()+'円／'+TAG_DIMS[tagDim]+'別の合計 '+x.sum.toLocaleString()+'円（差 '+x.diff.toLocaleString()+'円）').join('、');
+  warnings.push(TAG_DIMS[tagDim]+'別の内訳の合計が科目合計と合わない科目が '+tagCheck.dropped.size+' 科目あります（'+ex+(tagCheck.mismatches.length>4?' ほか':'')+'）。この科目の内訳は取り込まず、科目合計だけを取り込みます。内訳の行を削除・編集していないか、円単位で出力したかを確認してください。');
+  for(let i=items.length-1;i>=0;i--)if(items[i].tagDimension&&tagCheck.dropped.has(key(items[i].account)))items.splice(i,1);
+ }
  const referenceMonth=prevMonth(cfg.start),parentItems=items.filter(r=>!r.tagDimension),detailItems=items.filter(r=>r.tagDimension),openingMissingAccounts=type==='monthlyBS'?[...new Set(items.filter(r=>r.role!=='summary').map(r=>r.account))].filter(a=>!parentItems.some(r=>r.account===a&&r.date===referenceMonth&&Number.isFinite(r.amount))):[];
- if(detailItems.length){warnings.push('勘定科目と取引先が明記されたBS内訳は、取引先別の確定残高として保存します。科目合計には加算しません。空欄の取引先は科目合計行として扱うため、未選択内訳は「未選択」などの名称を明記してください。');const missing=[...new Set(detailItems.map(r=>r.account))].filter(a=>!parentItems.some(r=>r.account===a));if(missing.length)warnings.push('科目合計行がないため、'+missing.join('・')+'の合計残高とBS全体の一致は保留します。取引先内訳を足して科目合計とは扱いません。');}
+ if(detailItems.length){warnings.push(TAG_DIMS[tagDim]+'別の内訳（'+new Set(detailItems.map(r=>key(r.account))).size+'科目・'+new Set(detailItems.map(r=>key(r.tagValue))).size+'件）は、科目合計とは別に保存し、科目合計には足しません。'+(tagCheck?.checked?'内訳の合計は '+tagCheck.checked+' 科目すべての月で科目合計と照合しました'+(tagCheck.dropped.size?'（合わない科目を除く）':'')+'。':'')+(type==='monthlyBS'&&tagDim==='party'?'取引先別の残高は確定値として回収・支払の確認に使います。':''));const missing=[...new Set(detailItems.map(r=>r.account))].filter(a=>!parentItems.some(r=>r.account===a));if(missing.length)warnings.push('科目合計行がないため、'+missing.join('・')+'の合計残高とBS全体の一致は保留します。取引先内訳を足して科目合計とは扱いません。');}
  if(openingMissingAccounts.length)warnings.push('レビュー開始月の前月末（'+referenceMonth+'）の確定残高が '+openingMissingAccounts.length+'科目で不足しています。初月の増減照合は保留します。期首付きの通期BS、または前月末を含む月次BSを取り込んでください。');
  if(meta.periodValid&&cols.length&&E.monthRange(meta.start,meta.end).some(m=>!cols.some(c=>c.month===m)))warnings.push('帳票タイトルの期間に対して月見出しが不足しています。表示していない月を0円とは扱いません。');
  const declaredMonths=[...new Set(cols.length?cols.map(c=>c.month):rows.slice(h+1).map(r=>period(get(r,'date'),datedCfg)).filter(Boolean))].sort();
- return {items,errors,headers,warnings,reportStats:{months:[...new Set(items.filter(r=>!r.opening).map(r=>r.date))].sort(),declaredMonths,accounts:new Set(items.map(r=>r.account)).size,tagRows:detailItems.length,unit,openingMonth:openingDate,openingMissingAccounts,sourcePeriod:meta.periodValid?{start:meta.start,end:meta.end}:null,entity:meta.entity,reportedTotals}};
+ return {items,errors,headers,warnings,reportStats:{months:[...new Set(items.filter(r=>!r.opening).map(r=>r.date))].sort(),declaredMonths,accounts:new Set(items.map(r=>r.account)).size,tagRows:detailItems.length,unit,openingMonth:openingDate,openingMissingAccounts,sourcePeriod:meta.periodValid?{start:meta.start,end:meta.end}:null,entity:meta.entity,reportedTotals,...(tagDim?{tagDimension:tagDim,detailReportedTotals,tagCheck:tagCheck&&{checked:tagCheck.checked,dropped:[...tagCheck.dropped],mismatches:tagCheck.mismatches.slice(0,50),residual:tagCheck.residual,untagged:tagCheck.untagged,missing:tagCheck.missing,partial:tagCheck.partial}}:{})}};
 }
 function effectiveRole(row,type,cfg){const override=cfg.accountRoles[type+':'+row.account];if(override)return override;const inferred=inferRole(row.account,type,row.category);return row.role==='asset'&&inferred==='cash'?'cash':row.role&&row.role!=='unknown'?row.role:inferred;}
 function matrix(rows,type,months,cfg){
@@ -2025,8 +2073,109 @@ function validateSettings(value){
  const out={...defaults(),...(value||{})};if(typeof out.comparisonConfirmed!=='boolean'||typeof out.agingComplete!=='boolean'||out.agingAsOf&&!E.date(out.agingAsOf)||!out.accountRoles||typeof out.accountRoles!=='object'||Array.isArray(out.accountRoles))throw Error('月次レビューの設定が不正です。');
  for(const v of Object.values(out.accountRoles))if(!Object.hasOwn(roles,v))throw Error('科目分類が不正です。');return out;
 }
-const F={roles,defaults,settings,prevMonth,endDay,period,monthColumns,guessMapping,headerRow,reportMetadata,detectUnit,detectBasis,inferRole,normalizeReports,matrix,build,addFindings,receivables,validateSettings};
+const F={roles,defaults,settings,prevMonth,endDay,period,monthColumns,guessMapping,headerRow,reportMetadata,detectUnit,detectBasis,inferRole,normalizeReports,matrix,build,addFindings,receivables,validateSettings,TAG_DIMS,tagDimensionOf,reconcileTags};
 root.ReviewFinancial=F;E.Financial=F;if(typeof module!=='undefined')module.exports=F;
+})(typeof window!=='undefined'?window:globalThis);
+</script>
+<script>
+/* 月次PL・BSの「表示するタグ」別の帳票（取引先・品目・部門・セグメント）を、科目合計と分けて持つ。
+   - 科目合計（タグ欄が空の行）は datasets.monthlyBS / monthlyPL / priorBS / priorPL に1組だけ置く。
+   - BSの取引先別は従来どおり datasets.monthlyBS / priorBS（回収・支払の確認に使う確定残高）。
+   - それ以外のタグ別の行は session.tagReports（科目合計には足さない）。
+   取り込みは「同じ帳票・同じタグ」の枠だけを置き換え、他のタグ別の内訳は残す。 */
+(function(root){
+'use strict';
+const E=root.ReviewEngine,F=root.ReviewFinancial;
+const clean=s=>String(s??'').normalize('NFKC').trim(),key=s=>clean(s).replace(/[\s　]/g,'');
+const DIMS=F.TAG_DIMS;
+const REPORT_TYPES=['monthlyBS','monthlyPL','priorBS','priorPL'];
+const isBS=type=>E.reportType(type)==='monthlyBS';
+// BSの取引先別だけは datasets に残す（既存の回収・支払の分析が読む）
+const inDataset=(type,r)=>!r.tagDimension||isBS(type)&&r.tagDimension==='party';
+function slotOf(i){
+ if(!i||!REPORT_TYPES.includes(i.type))return null;
+ if(typeof i.tagDimension==='string')return i.tagDimension;
+ // v3.7 までの読込履歴：BSの取引先内訳つきは取引先の枠
+ return isBS(i.type)&&i.reportStats?.tagRows>0?'party':'';
+}
+function compact(type,r,importSource){
+ return {type,tagDimension:r.tagDimension,tagValue:r.tagValue,account:r.account,...(r.accountCode?{accountCode:r.accountCode}:{}),...(r.category?{category:r.category}:{}),...(r.role?{role:r.role}:{}),date:r.date,amount:r.amount,unit:r.unit,...(r.opening?{opening:true}:{}),...(Number.isInteger(r.line)?{line:r.line}:{}),importSource};
+}
+function cellKey(r){return key(r.account)+'\u0001'+r.date;}
+// 取り込む前に、読込済みの帳票との関係を調べる（ダイアログの注意と、確定時の処理で同じ結果を使う）
+function plan(session,type,items,{importSource='',mode='replace'}={}){
+ const dim=items.find(r=>r.tagDimension)?.tagDimension||'';
+ const old=session.datasets?.[type]||[],oldTags=(session.tagReports||[]);
+ const newParents=items.filter(r=>!r.tagDimension),newDetail=items.filter(r=>r.tagDimension);
+ const newAccounts=new Set(newParents.map(r=>key(r.account))),newCells=new Map(newParents.map(r=>[cellKey(r),r]));
+ const oldParents=old.filter(r=>!r.tagDimension);
+ // 科目合計の食い違い（同じ科目・同じ月で金額が違う）
+ const conflicts=[];
+ for(const r of oldParents){const n=newCells.get(cellKey(r));if(n&&Number.isSafeInteger(r.amount)&&Number.isSafeInteger(n.amount)&&r.amount!==n.amount)conflicts.push({account:r.account,date:r.date,old:r.amount,new:n.amount,source:r.source||''});}
+ const conflictAccounts=new Set(conflicts.map(c=>key(c.account)));
+ // 新しい帳票にない科目：すべて0円なら残す（品目別・部門別は合計0の科目を省くため）。0円でなければ外して知らせる
+ const absent=new Map();for(const r of oldParents){const k=key(r.account);if(newAccounts.has(k))continue;const g=absent.get(k)||{account:r.account,zero:true};if(Number.isSafeInteger(r.amount)&&r.amount!==0)g.zero=false;absent.set(k,g);}
+ const droppedAccounts=[...absent.values()].filter(g=>!g.zero).map(g=>g.account),droppedKeys=new Set(droppedAccounts.map(key));
+ // 置き換えで外れる他のタグ別の内訳：科目合計が食い違う科目・外れる科目の分
+ const staleKey=r=>conflictAccounts.has(key(r.account))||droppedKeys.has(key(r.account));
+ const otherDims=new Map();
+ const noteStale=(d,r)=>{if(!staleKey(r))return;const g=otherDims.get(d)||new Set();g.add(r.account);otherDims.set(d,g);};
+ for(const r of old)if(r.tagDimension&&r.tagDimension!==dim)noteStale(r.tagDimension,r);
+ for(const r of oldTags)if(r.type===type&&r.tagDimension!==dim)noteStale(r.tagDimension,r);
+ const stale=[...otherDims].map(([d,set])=>({dim:d,label:DIMS[d]||d,accounts:[...set]}));
+ const overlap=mode==='append'?appendOverlap(session,type,items):0;
+ return {type,dim,mode,parents:newParents.length,details:newDetail.length,detailAccounts:new Set(newDetail.map(r=>key(r.account))).size,conflicts,droppedAccounts,stale,overlap,importSource};
+}
+function appendOverlap(session,type,items){
+ const k=r=>JSON.stringify([r.date,key(r.account),r.tagDimension||'',key(r.tagValue)]);
+ const keys=new Set([...(session.datasets?.[type]||[]),...(session.tagReports||[]).filter(r=>r.type===type)].map(k));
+ return items.filter(r=>keys.has(k(r))).length;
+}
+// 確定：session を書き換える（datasets[type] と tagReports と imports の該当の枠）
+function apply(session,type,items,{importSource,mode='replace',record}){
+ const p=plan(session,type,items,{importSource,mode}),dim=p.dim;
+ const datasetRows=items.filter(r=>inDataset(type,r)),tagRows=items.filter(r=>!inDataset(type,r)).map(r=>compact(type,r,importSource));
+ if(!Array.isArray(session.tagReports))session.tagReports=[];
+ if(mode==='append'){
+  session.datasets[type]=session.datasets[type].concat(datasetRows);
+  if(tagRows.length)session.tagReports=session.tagReports.concat(tagRows);
+ }else{
+  const conflictKeys=new Set(p.conflicts.map(c=>key(c.account))),dropKeys=new Set(p.droppedAccounts.map(key)),newAccounts=new Set(items.filter(r=>!r.tagDimension).map(r=>key(r.account)));
+  const stale=r=>conflictKeys.has(key(r.account))||dropKeys.has(key(r.account));
+  const keep=session.datasets[type].filter(r=>{
+   if(!r.tagDimension)return !newAccounts.has(key(r.account))&&!dropKeys.has(key(r.account));
+   if(r.tagDimension===dim)return false;
+   return !stale(r);
+  });
+  session.datasets[type]=keep.concat(datasetRows);
+  session.tagReports=session.tagReports.filter(r=>r.type!==type||r.tagDimension!==dim&&!stale(r)).concat(tagRows);
+  session.imports=(session.imports||[]).filter(i=>i.type!==type||slotOf(i)!==dim);
+ }
+ if(record)session.imports.push({...record,tagDimension:dim});
+ return p;
+}
+// 読込状況：帳票ごと・タグごと
+function materials(session){
+ const out=[];
+ for(const type of REPORT_TYPES){
+  const imports=(session.imports||[]).filter(i=>i.type===type);
+  const slots=new Map();for(const i of imports){const d=slotOf(i);const list=slots.get(d)||[];list.push(i);slots.set(d,list);}
+  const parentCount=(session.datasets?.[type]||[]).filter(r=>!r.tagDimension).length;
+  const count=d=>d==='party'&&isBS(type)?(session.datasets?.[type]||[]).filter(r=>r.tagDimension==='party').length:(session.tagReports||[]).filter(r=>r.type===type&&r.tagDimension===d).length;
+  const dims=['party','item','department',...['segment1','segment2','segment3'].filter(d=>slots.has(d)||count(d))];
+  out.push({type,name:E.TYPES[type]?.name||type,totals:parentCount,plain:slots.get('')||[],dims:dims.map(d=>{const list=slots.get(d)||[];const last=list.at(-1);return {dim:d,label:DIMS[d],loaded:count(d)>0,rows:count(d),file:last?.name||'',at:last?.at||'',months:last?.reportStats?.months||last?.months||[],check:last?.reportStats?.tagCheck||null,imports:list};})});
+ }
+ return out;
+}
+// 帳票のタグ別の行（科目・タグごとに月の値をまとめる）
+function rows(session,type,dim,account){
+ const src=dim==='party'&&isBS(type)?(session.datasets?.[type]||[]).filter(r=>r.tagDimension==='party'):(session.tagReports||[]).filter(r=>r.type===type&&r.tagDimension===dim);
+ const a=account==null?null:key(account),by=new Map();
+ for(const r of src){if(a!==null&&key(r.account)!==a)continue;const k=key(r.account)+'\u0001'+key(r.tagValue);let g=by.get(k);if(!g)by.set(k,g={account:r.account,tag:r.tagValue,tagKey:key(r.tagValue),unselected:/^(?:未選択|取引先未選択)$/.test(key(r.tagValue)),values:{},opening:null,unit:r.unit,approximate:r.unit===1000});if(r.opening)g.opening=r.amount;else g.values[r.date]=r.amount;}
+ return [...by.values()];
+}
+function has(session,type,dim){return dim==='party'&&isBS(type)?(session.datasets?.[type]||[]).some(r=>r.tagDimension==='party'):(session.tagReports||[]).some(r=>r.type===type&&r.tagDimension===dim);}
+root.ReviewTagReports={DIMS,REPORT_TYPES,slotOf,plan,apply,materials,rows,has,inDataset};
 })(typeof window!=='undefined'?window:globalThis);
 </script>
 <script>(function(root){
@@ -4175,6 +4324,20 @@ root.ReviewPartyOpening={build,openingValues,addFindings,kindOf,WORDS,version:1}
 <script>
 (function(root){
 'use strict';
+// stub: replaced by the implementation
+root.ReviewTagAnalysis={version:0};
+})(typeof window!=='undefined'?window:globalThis);
+</script>
+<script>
+(function(root){
+'use strict';
+// stub: replaced by the implementation
+root.ReviewFeedbackOrder={version:0};
+})(typeof window!=='undefined'?window:globalThis);
+</script>
+<script>
+(function(root){
+'use strict';
 // 月次PL・BS画面。v3.0の帳票形式・推移グラフ・売掛金・照合はそのまま残し、
 // 帳票形式を freee の月次推移と同じ階層（▶科目 → 取引先別・品目別・部門別 → 未選択・各タグ）にした。
 // 金額を押すと、右側のパネルで「なぜこの月にこれだけ変動したか」を仕訳から説明する（ReviewVariance）。
@@ -4675,6 +4838,20 @@ root.ReviewPartyOpeningUI={panel,version:1};
 <script>
 (function(root){
 'use strict';
+// stub: replaced by the implementation
+root.ReviewTagAnalysisUI={version:0};
+})(typeof window!=='undefined'?window:globalThis);
+</script>
+<script>
+(function(root){
+'use strict';
+// stub: replaced by the implementation
+root.ReviewFeedbackOrderUI={version:0};
+})(typeof window!=='undefined'?window:globalThis);
+</script>
+<script>
+(function(root){
+'use strict';
 // 月次PL・BS画面の目次。画面の上（メニューの下）に固定し、押すとその欄へ移動する。
 // 欄は見出しの文字で探す。▶の開閉などで欄が描き直されても、目次の行き先は変わらない。
 const F=root.ReviewFinancial;
@@ -5012,7 +5189,7 @@ root.KubunHost=H;
 const E=window.ReviewEngine,$=s=>document.querySelector(s),money=n=>new Intl.NumberFormat('ja-JP').format(n||0)+' 円';
 const INS=window.ReviewInsight,W=window.ReviewWorkspace,P=window.ReviewPortfolio,M=window.ReviewMotion,F=window.ReviewFinancial,D=window.ReviewDetails;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let workspace=W.fresh(),session=E.newSession(),result=E.analyze(session),view='companies',filter='all',search='',historySearch='',contextSearch='',contextOffset=0,companySearch='',companyFilter='all',selected=null,pending=null,files=[],forceType=null,saveTimer=null,db=null,loading=true,saveState='loading',writeQueue=Promise.resolve(),revision=0,bulkPlan=null,importCompanyId=null,loadError='',monthlyFocus=null;
+let workspace=W.fresh(),session=E.newSession(),result=E.analyze(session),view='companies',filter='all',search='',historySearch='',contextSearch='',contextOffset=0,companySearch='',companyFilter='all',selected=null,pending=null,files=[],queueTotal=0,forceType=null,saveTimer=null,db=null,loading=true,saveState='loading',writeQueue=Promise.resolve(),revision=0,bulkPlan=null,importCompanyId=null,loadError='',monthlyFocus=null;
 const ICONS={context:'M4 4h16v16H4z M8 8h8 M8 12h8 M8 16h5',review:'M4 5h16v14H4z M8 10h8 M8 14h5',data:'M4 8h16v12H4z M4 8l3-4h5l2 4 M9 13h6',check:'M9 5h11 M9 12h11 M9 19h11 M3 5l1 1 2-3 M3 12l1 1 2-3 M3 19l1 1 2-3',memo:'M5 3h11l3 3v15H5z M9 10h6 M9 14h6 M9 18h3',book:'M3 4h7l2 2 2-2h7v16h-7l-2 2-2-2H3z M12 6v16',upload:'M12 16V3 M7 8l5-5 5 5 M4 16v5h16v-5',download:'M12 3v13 M7 11l5 5 5-5 M4 17v4h16v-4',shield:'M12 3l8 4v5c0 5-8 9-8 9s-8-4-8-9V7z M8 12l3 3 5-6',spark:'M12 3l2 6 6 3-6 2-2 7-2-7-6-2 6-3z',plus:'M12 5v14 M5 12h14',copy:'M8 8h12v13H8z M4 16V3h12',chevron:'M8 5l7 7-7 7',info:'M12 11v6 M12 7h.01 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0',trash:'M3 6h18 M8 6V3h8v3 M6 6l1 15h10l1-15',clock:'M12 7v5l3 2 M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0',checkmark:'M5 12l4 4L19 6',refresh:'M20 4v6h-6 M4 20v-6h6 M6 7a8 8 0 0 1 14 3 M18 17a8 8 0 0 1-14-3'};
 const icon=n=>`<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[n]||ICONS.info}"/></svg>`;
 // ---- 消費税区分（同じアプリ内の区分チェック）との連携 ----
@@ -5141,7 +5318,7 @@ function render(){
  page=page.replace('>新規案件<','>会社を追加<').replace('<li>「新規案件」は現在のデータを消します。ダウンロード済みのバックアップから復元できます。</li>','<li>会社の追加・復元は別の会社として登録。現在の会社の記録を保持します。</li>');
  if(view==='review'||view==='monthly'){page=page.replace('>案件名<','>会社名<');if(!company.entityType)page=page.replace(/(<option value="(?:corp|individual)") selected/g,'$1').replace('<select id="entityType" name="type">','<select id="entityType" name="type" required><option value="" selected>区分を選択</option>');}
  $('#app').innerHTML=`<div class="shell">
- <header class="sidebar"><div class="firmintro"><span>あしたの会計事務所｜自計化チェックの作業スペース</span><span class="version">MULTI-COMPANY · 3.7.0</span></div>
+ <header class="sidebar"><div class="firmintro"><span>あしたの会計事務所｜自計化チェックの作業スペース</span><span class="version">MULTI-COMPANY · 3.9.0</span></div>
  <div class="firmmasthead"><div class="brand"><svg class="firmmark" viewBox="0 0 66 66" aria-hidden="true"><path class="mark-outline" d="M33 5 51 11 61 29 55 49 36 61 15 55 5 37 11 16Z"/><path class="mark-inner" d="M29 9 49 15 56 34 49 53 29 57 12 46 10 26Z"/><text x="33" y="30">ashita</text><text x="33" y="39">accounting</text></svg><div><strong>あしたの会計事務所</strong><span>自計化レビュー</span></div></div>
  <div class="sidebarcompany"><span class="small">選択中の会社</span><strong>${esc(company?.name||'会社を選んで開始')}</strong><button class="btn small" data-view="companies">会社を切り替える</button></div>
  <div class="firmtools">${themeControl()}<div class="sidefoot"><strong><i class="statusdot"></i>端末内で完結</strong><br>読込データの外部送信なし</div></div></div></header>
@@ -5214,7 +5391,7 @@ function bindReview(){
 }
 function bindDropzone(){const z=$('#dropzone');z.addEventListener('dragover',e=>{e.preventDefault();z.classList.add('drag');});z.addEventListener('dragleave',()=>z.classList.remove('drag'));z.addEventListener('drop',e=>{e.preventDefault();z.classList.remove('drag');forceType=null;queueFiles([...e.dataTransfer.files]);});z.addEventListener('keydown',e=>{if(e.target!==z)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();chooseFiles(null);}});}
 function chooseFiles(type){const c=W.current(workspace);if(!c)return toast('会社一覧で対象の会社を選んでください');if(!c.entityType){showCompanyDialog(c.id);return toast('読込前に個人／法人の区分を設定してください');}forceType=type||null;importCompanyId=c.id;$('#fileInput').value='';$('#fileInput').click();}
-async function queueFiles(list){const c=W.current(workspace);if(!c)return toast('会社を選んでから資料を読み込んでください');if(!c.entityType)return toast('先に個人／法人の区分を設定してください');importCompanyId=c.id;files=list.filter(f=>/\.(csv|tsv|txt)$/i.test(f.name));if(!files.length)return toast('CSV・TSV・テキスト形式を選んでください');if(files.length>10)return toast('一度に選ぶファイルは10個以内にしてください');await nextFile();}
+async function queueFiles(list){const c=W.current(workspace);if(!c)return toast('会社を選んでから資料を読み込んでください');if(!c.entityType)return toast('先に個人／法人の区分を設定してください');importCompanyId=c.id;files=list.filter(f=>/\.(csv|tsv|txt)$/i.test(f.name));if(!files.length)return toast('CSV・TSV・テキスト形式を選んでください');if(files.length>12){files=[];return toast('一度に選ぶファイルは12個以内にしてください');}queueTotal=files.length;await nextFile();}
 async function nextFile(){
  if(!files.length){pending=null;return;}const file=files.shift();if(file.size>12*1024*1024){toast('12MB以内のCSVにしてください');return nextFile();}
  const end=M.busy('CSVを読み込み中…');try{
@@ -5269,10 +5446,23 @@ function showImport(){const p=pending,normalizeOptions={project:session.project,
   const detected=E.reportPeriod(preview.items,p.type,session.project,preview.reportStats||{}).recommended;
   if(detected&&detected!==p.type){p.type=detected;p.mode=['priorPL','priorBS'].includes(detected)?'append':'replace';t=E.TYPES[p.type];preview=E.normalizeRows(p.rows,p.type,p.mapping,p.headerIndex,normalizeOptions);}
  }
- p.preview=preview;const period=journalImportPeriod(p,preview);p.periodValid=period.valid;const mapped=t.required.every(k=>p.mapping[k]>=0),valid=mapped&&preview.items.length&&(!preview.errors.length||p.skip)&&period.valid;const dates=preview.items.map(r=>r.date).filter(Boolean).sort();$('#importDialog').innerHTML=`<div class="dialoghead"><div><div class="eyebrow">IMPORT PREVIEW</div><h2 id="importTitle">列の対応を確認</h2></div><button class="close" data-action="closeImport" aria-label="閉じる">×</button></div><div class="dialogbody"><p class="importname"><strong>${esc(p.file.name)}</strong></p><div class="mapping"><div class="field"><label for="importType">資料の種類</label><select id="importType">${Object.entries(E.TYPES).map(([k,x])=>`<option value="${k}" ${k===p.type?'selected':''}>${x.name}</option>`).join('')}</select></div><div class="field"><label for="encoding">文字コード</label><select id="encoding"><option value="utf-8" ${p.encoding==='utf-8'?'selected':''}>UTF-8</option><option value="shift_jis" ${p.encoding==='shift_jis'?'selected':''}>Shift_JIS</option></select></div><div class="field"><label for="headerIndex">見出し行</label><select id="headerIndex">${p.rows.slice(0,Math.min(25,p.rows.length-1)).map((r,i)=>`<option value="${i}" ${i===p.headerIndex?'selected':''}>${i+1}行目：${esc(r.slice(0,3).join(' / ').slice(0,60))}</option>`).join('')}</select></div><div class="field"><label for="importMode">既存データへの反映</label><select id="importMode"><option value="replace" ${p.mode==='replace'?'selected':''}>同じ種類の資料を置き換える</option><option value="append" ${p.mode==='append'?'selected':''}>既存資料に追加する</option></select></div></div><details ${mapped?'':'open'}><summary>列の対応 ${mapped?'（必須列を検出）':'（必須列の指定が必要）'}</summary><div class="mapping">${Object.keys(t.fields).map(k=>`<div class="field"><label for="map_${k}">${E.LABELS[k]} ${t.required.includes(k)?'＊':''}</label><select id="map_${k}" data-map="${k}"><option value="-1">指定なし</option>${p.rows[p.headerIndex].map((h,i)=>`<option value="${i}" ${p.mapping[k]===i?'selected':''}>${i+1}列：${esc(D.headerLabel(p.rows[p.headerIndex],i))}</option>`).join('')}</select></div>`).join('')}</div></details><p class="previewrange">有効 ${preview.items.length.toLocaleString()}行 ／ 読取エラー ${preview.errors.length}行${dates.length?`　期間 ${dates[0]}〜${dates.at(-1)}`:''}</p>${period.html}${preview.errors.length?`<div class="notice error" style="margin-top:12px">読取エラー：${preview.errors.slice(0,6).map(e=>`${e.line}行目 ${esc(e.fields.join('・'))}`).join('／')}${preview.errors.length>6?' ほか':''}<br>日付は年付き、金額は数字が必要です。列の対応と原CSVを確認してください。<label class="checklabel checkbox-row"><input id="skipErrors" type="checkbox" ${p.skip?'checked':''}>エラー行を除外して取り込む（除外件数を記録）</label></div>`:''}${financialImportOptions(p,preview)}${KH&&['current','prior'].includes(p.type)?`<label class="checklabel checkbox-row kubunshare"><input id="shareKubun" type="checkbox" ${p.shareKubun!==false?'checked':''}><span>消費税区分チェックにも同じCSVを入れる<br><span class="small">同じ会社の「消費税区分」画面で、科目×税区分の違和感チェックに使います。freeeの仕訳帳・総勘定元帳の形式だけ読み取ります。</span></span></label>`:''}${reportTotalsPreview(preview)}${journalImportSummary(preview)}${D.importSummary(preview)}<div class="previewtable" style="margin-top:15px"><table class="datatable"><thead><tr>${p.rows[p.headerIndex].slice(0,8).map((h,i)=>`<th>${esc(D.headerLabel(p.rows[p.headerIndex],i))}</th>`).join('')}</tr></thead><tbody>${p.rows.slice(p.headerIndex+1,p.headerIndex+5).map(r=>`<tr>${r.slice(0,8).map(v=>`<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="small" style="margin-top:12px">月次PL・BSは横形式にも対応。月・科目・金額のプレビューと、列の対応を確認してから取り込んでください。</p></div><div class="dialogfoot"><button class="btn" data-action="closeImport">キャンセル</button><button class="btn primary" data-action="commitImport" ${!valid?'disabled':''}>${preview.items.length}行を読み込む</button></div>`;if(!$('#importDialog').open)$('#importDialog').showModal();}
+ p.preview=preview;const period=journalImportPeriod(p,preview);p.periodValid=period.valid;const mapped=t.required.every(k=>p.mapping[k]>=0),valid=mapped&&preview.items.length&&(!preview.errors.length||p.skip)&&period.valid;const dates=preview.items.map(r=>r.date).filter(Boolean).sort();$('#importDialog').innerHTML=`<div class="dialoghead"><div><div class="eyebrow">IMPORT PREVIEW</div><h2 id="importTitle">列の対応を確認</h2></div><button class="close" data-action="closeImport" aria-label="閉じる">×</button></div><div class="dialogbody"><p class="importname"><strong>${esc(p.file.name)}</strong>${queueTotal>1?`<span class="small queue-step">　${queueTotal-files.length}／${queueTotal}件目</span>`:''}</p><div class="mapping"><div class="field"><label for="importType">資料の種類</label><select id="importType">${Object.entries(E.TYPES).map(([k,x])=>`<option value="${k}" ${k===p.type?'selected':''}>${x.name}</option>`).join('')}</select></div><div class="field"><label for="encoding">文字コード</label><select id="encoding"><option value="utf-8" ${p.encoding==='utf-8'?'selected':''}>UTF-8</option><option value="shift_jis" ${p.encoding==='shift_jis'?'selected':''}>Shift_JIS</option></select></div><div class="field"><label for="headerIndex">見出し行</label><select id="headerIndex">${p.rows.slice(0,Math.min(25,p.rows.length-1)).map((r,i)=>`<option value="${i}" ${i===p.headerIndex?'selected':''}>${i+1}行目：${esc(r.slice(0,3).join(' / ').slice(0,60))}</option>`).join('')}</select></div><div class="field"><label for="importMode">既存データへの反映</label><select id="importMode"><option value="replace" ${p.mode==='replace'?'selected':''}>${E.reportType(p.type)?'同じ帳票・同じタグの分を置き換える（他のタグ別は残す）':'同じ種類の資料を置き換える'}</option><option value="append" ${p.mode==='append'?'selected':''}>既存資料に追加する</option></select></div></div><details ${mapped?'':'open'}><summary>列の対応 ${mapped?'（必須列を検出）':'（必須列の指定が必要）'}</summary><div class="mapping">${Object.keys(t.fields).map(k=>`<div class="field"><label for="map_${k}">${E.LABELS[k]} ${t.required.includes(k)?'＊':''}</label><select id="map_${k}" data-map="${k}"><option value="-1">指定なし</option>${p.rows[p.headerIndex].map((h,i)=>`<option value="${i}" ${p.mapping[k]===i?'selected':''}>${i+1}列：${esc(D.headerLabel(p.rows[p.headerIndex],i))}</option>`).join('')}</select></div>`).join('')}</div></details><p class="previewrange">有効 ${preview.items.length.toLocaleString()}行 ／ 読取エラー ${preview.errors.length}行${dates.length?`　期間 ${dates[0]}〜${dates.at(-1)}`:''}</p>${period.html}${preview.errors.length?`<div class="notice error" style="margin-top:12px">読取エラー：${preview.errors.slice(0,6).map(e=>`${e.line}行目 ${esc(e.fields.join('・'))}`).join('／')}${preview.errors.length>6?' ほか':''}<br>日付は年付き、金額は数字が必要です。列の対応と原CSVを確認してください。<label class="checklabel checkbox-row"><input id="skipErrors" type="checkbox" ${p.skip?'checked':''}>エラー行を除外して取り込む（除外件数を記録）</label></div>`:''}${financialImportOptions(p,preview)}${KH&&['current','prior'].includes(p.type)?`<label class="checklabel checkbox-row kubunshare"><input id="shareKubun" type="checkbox" ${p.shareKubun!==false?'checked':''}><span>消費税区分チェックにも同じCSVを入れる<br><span class="small">同じ会社の「消費税区分」画面で、科目×税区分の違和感チェックに使います。freeeの仕訳帳・総勘定元帳の形式だけ読み取ります。</span></span></label>`:''}${reportTotalsPreview(preview)}${journalImportSummary(preview)}${D.importSummary(preview)}<div class="previewtable" style="margin-top:15px"><table class="datatable"><thead><tr>${p.rows[p.headerIndex].slice(0,8).map((h,i)=>`<th>${esc(D.headerLabel(p.rows[p.headerIndex],i))}</th>`).join('')}</tr></thead><tbody>${p.rows.slice(p.headerIndex+1,p.headerIndex+5).map(r=>`<tr>${r.slice(0,8).map(v=>`<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="small" style="margin-top:12px">月次PL・BSは横形式にも対応。月・科目・金額のプレビューと、列の対応を確認してから取り込んでください。</p></div><div class="dialogfoot"><button class="btn" data-action="closeImport">${files.length?'残りもすべて中止':'キャンセル'}</button>${files.length?`<button class="btn" data-action="skipImport">この資料をとばして次へ</button>`:''}<button class="btn primary" data-action="commitImport" ${!valid?'disabled':''}>${preview.items.length.toLocaleString()}行を読み込む${files.length?'（次へ）':''}</button></div>`;if(!$('#importDialog').open)$('#importDialog').showModal();}
+function tagVariantNotice(p,preview){
+ const T=window.ReviewTagReports;if(!T||!E.reportType(p.type)||!preview.items.length)return '';
+ const pl=T.plan(session,p.type,preview.items,{mode:p.mode}),label=pl.dim?T.DIMS[pl.dim]:'',out=[];
+ const others=T.materials(session).find(m=>m.type===p.type)?.dims.filter(d=>d.loaded&&d.dim!==pl.dim).map(d=>d.label)||[];
+ out.push(pl.dim?`<strong>表示するタグ：${esc(label)}</strong>　${esc(label)}別の内訳 ${pl.details.toLocaleString()}行（${pl.detailAccounts}科目）と、科目合計 ${pl.parents.toLocaleString()}行を分けて保存します。内訳は科目合計に足しません。`:`<strong>表示するタグ：なし</strong>　科目合計 ${pl.parents.toLocaleString()}行を保存します。`);
+ if(p.mode==='replace')out.push(others.length?`読込済みの ${esc(others.join('・'))}別 の内訳は残します（置き換えるのは${pl.dim?'同じ「'+esc(label)+'別」':'科目合計'}だけです）。`:'');
+ if(pl.conflicts.length){const c=pl.conflicts[0];out.push(`読込済みの帳票と科目合計が ${pl.conflicts.length}か所 違います（例：${esc(c.account)} ${esc(c.date)} ${money(c.old)} → ${money(c.new)}）。この帳票の値を使います。freeeの出力時点が違う可能性があります。`);}
+ if(pl.droppedAccounts.length)out.push(`読込済みの帳票にあってこの帳票にない科目（${esc(pl.droppedAccounts.slice(0,4).join('・'))}${pl.droppedAccounts.length>4?' ほか':''}）は、0円でないため外します。`);
+ for(const st of pl.stale)out.push(`科目合計が違う科目の ${esc(st.label)}別 の内訳（${esc(st.accounts.slice(0,3).join('・'))}${st.accounts.length>3?' ほか':''}）は外れます。同じ時点で出力したCSVをそろえて読み込むと、すべて残ります。`);
+ if(pl.overlap)out.push(`同じ月・科目・内訳の行が ${pl.overlap.toLocaleString()}行 重なっています。「置き換える」を選ぶか、重ならない月の帳票を追加してください。`);
+ const warn=pl.conflicts.length||pl.stale.length||pl.droppedAccounts.length||pl.overlap;
+ return `<div id="tagVariantNotice" class="notice ${warn?'amber':''}" style="margin-top:10px">${out.filter(Boolean).join('<br>')}</div>`;
+}
 function financialImportOptions(p,preview){
  if(!E.reportType(p.type))return '';
- return `<section class="panelbody"><div class="mapping"><div class="field"><label for="financialImportUnit">帳票の金額単位</label><select id="financialImportUnit"><option value="1" ${p.unit!==1000?'selected':''}>円（正確な照合用）</option><option value="1000" ${p.unit===1000?'selected':''}>千円（概数・照合保留）</option></select></div>${E.reportType(p.type)==='monthlyPL'?`<div class="field"><label for="financialImportBasis">PLの表示方法</label><select id="financialImportBasis"><option value="monthly" ${p.basis!=='cumulative'?'selected':''}>単月の金額</option><option value="cumulative" ${p.basis==='cumulative'?'selected':''}>累計（取込不可・単月で再出力）</option></select></div>`:'<div class="field"><label>BSの表示方法</label><p>各月末残高。合算しません。</p></div>'}</div><div class="notice">${preview.reportStats?`${preview.reportStats.accounts}科目・表示行 ／ ${preview.reportStats.months.join('・')} ／ ${p.unit===1000?'千円から円に換算':'円単位'}${preview.reportStats.openingMonth?'<br>期首残高は '+preview.reportStats.openingMonth+' 末の残高として保持し、最初の月の増減照合に使います。':''}`:'科目と年月の列を確認してください。'}<br>合計・利益行はそのまま表示し、科目合計に重ねません。${['priorPL','priorBS'].includes(p.type)?'前期・過去の資料として保存し、当期の資料を保持します。':'対象期間外の列は保持しますが、レビュー対象に含めません。'}</div>${(preview.warnings||[]).map(w=>`<div class="notice amber" style="margin-top:10px">${esc(w)}</div>`).join('')}</section>`;
+ return `<section class="panelbody"><div class="mapping"><div class="field"><label for="financialImportUnit">帳票の金額単位</label><select id="financialImportUnit"><option value="1" ${p.unit!==1000?'selected':''}>円（正確な照合用）</option><option value="1000" ${p.unit===1000?'selected':''}>千円（概数・照合保留）</option></select></div>${E.reportType(p.type)==='monthlyPL'?`<div class="field"><label for="financialImportBasis">PLの表示方法</label><select id="financialImportBasis"><option value="monthly" ${p.basis!=='cumulative'?'selected':''}>単月の金額</option><option value="cumulative" ${p.basis==='cumulative'?'selected':''}>累計（取込不可・単月で再出力）</option></select></div>`:'<div class="field"><label>BSの表示方法</label><p>各月末残高。合算しません。</p></div>'}</div><div class="notice">${preview.reportStats?`${preview.reportStats.accounts}科目・表示行 ／ ${preview.reportStats.months.join('・')} ／ ${p.unit===1000?'千円から円に換算':'円単位'}${preview.reportStats.openingMonth?'<br>期首残高は '+preview.reportStats.openingMonth+' 末の残高として保持し、最初の月の増減照合に使います。':''}`:'科目と年月の列を確認してください。'}<br>合計・利益行はそのまま表示し、科目合計に重ねません。${['priorPL','priorBS'].includes(p.type)?'前期・過去の資料として保存し、当期の資料を保持します。':'対象期間外の列は保持しますが、レビュー対象に含めません。'}</div>${tagVariantNotice(p,preview)}${(preview.warnings||[]).map(w=>`<div class="notice amber" style="margin-top:10px">${esc(w)}</div>`).join('')}</section>`;
 }
 function reportTotalsPreview(preview){
  const rows=preview.reportStats?.reportedTotals||[];if(!rows.length)return '';
@@ -5295,26 +5485,24 @@ async function commitImport(){
  if(!t.required.every(k=>p.mapping[k]>=0)||!p.preview.items.length||p.preview.errors.length&&!p.skip)return;
  const duplicate=session.imports.some(i=>i.type===p.type&&i.fingerprint===p.fingerprint);
  if(duplicate&&p.mode==='append')return toast('同じファイルは読込済みです。重複追加を止めました');
- if(p.preview.items.length+(p.mode==='append'?session.datasets[p.type].length:0)>100000)return toast('資料1種類につき10万行以内にしてください');
+ const T=window.ReviewTagReports,datasetItems=E.reportType(p.type)?p.preview.items.filter(r=>T.inDataset(p.type,r)):p.preview.items;
+ if(datasetItems.length+(p.mode==='append'?session.datasets[p.type].length:0)>100000)return toast('資料1種類につき10万行以内にしてください');
+ if(E.reportType(p.type)&&p.preview.items.length-datasetItems.length+(session.tagReports||[]).length>300000)return toast('タグ別の帳票は合わせて30万行以内にしてください');
  if(p.mode==='append'&&!session.demo&&(p.type==='current'||p.type==='prior')){
    const ids=new Set(session.datasets[p.type].filter(r=>r.hasId).map(r=>r.date+'|'+r.id));
    if(p.preview.items.some(r=>r.hasId&&ids.has(r.date+'|'+r.id)))return toast('同じ日付・仕訳番号の資料が重なっています。「置き換える」か、重ならない期間のCSVを選んでください');
  }
- if(p.mode==='append'&&!session.demo&&E.reportType(p.type)){
-   const reportKey=r=>JSON.stringify([r.date,String(r.account||'').normalize('NFKC').replace(/\s/g,''),r.tagDimension||'',String(r.tagValue||'').normalize('NFKC').replace(/\s/g,'')]);
-   const keys=new Set(session.datasets[p.type].map(reportKey));
-   if(p.preview.items.some(r=>keys.has(reportKey(r))))return toast('同じ月・科目・内訳の帳票が重なっています。置き換えるか、重ならない月・取引先を追加してください');
- }
+ if(p.mode==='append'&&!session.demo&&E.reportType(p.type)&&T.plan(session,p.type,p.preview.items,{mode:'append'}).overlap)return toast('同じ月・科目・内訳の帳票が重なっています。置き換えるか、重ならない月の帳票を追加してください');
  if(session.demo){const old=session.project;syncActive();const c=W.add(workspace,{name:W.uniqueName(workspace,'実データ（会社名を設定）'),entityType:old.type});session=W.activate(workspace,c.id);session.project={...session.project,type:old.type,start:old.start,end:old.end,large:old.large,variance:old.variance};importCompanyId=c.id;selected=null;}
  for(const f of result.findings){const d=session.decisions[f.id];if(d?.note){d.reviewLabel=d.reviewLabel||f.title;d.reviewPeriod=d.reviewPeriod||session.project.start+'〜'+session.project.end;}}
  const importSource='csv:'+E.hash(p.fingerprint+'|'+p.file.name),historySource='hsrc:'+E.hash(p.fingerprint+'|'+p.file.name);
  const normalized=p.preview.items.map(r=>({...r,source:p.file.name,importSource,importErrors:p.preview.errors.length,...(p.type==='prior'?{historySource}:{})}));
  if(p.type==='prior')session.history.sources[historySource]={name:p.file.name,status:p.historyStatus||'reference',note:''};
- if(p.mode==='replace'){session.datasets[p.type]=normalized;session.imports=session.imports.filter(i=>i.type!==p.type);}
- else session.datasets[p.type].push(...normalized);
  const importedDates=normalized.map(r=>r.date).filter(Boolean).sort(),monthCounts={};for(const r of normalized)if(!r.opening&&r.date){const m=r.date.slice(0,7);monthCounts[m]=(monthCounts[m]||0)+1;}
  const reportStats=p.preview.reportStats?JSON.parse(JSON.stringify(p.preview.reportStats)):null;
- session.imports.push({type:p.type,name:p.file.name,importSource,count:normalized.length,errors:p.preview.errors.length,encoding:p.encoding,fingerprint:p.fingerprint,at:new Date().toISOString(),minDate:importedDates[0]||null,maxDate:importedDates.at(-1)||null,months:Object.keys(monthCounts).sort(),monthCounts,...(reportStats?{reportStats,sourcePeriod:reportStats.sourcePeriod,entity:reportStats.entity}:{}),...(p.preview.journalStats?{journalStats:{...p.preview.journalStats}}:{})});
+ const record={type:p.type,name:p.file.name,importSource,count:normalized.length,errors:p.preview.errors.length,encoding:p.encoding,fingerprint:p.fingerprint,at:new Date().toISOString(),minDate:importedDates[0]||null,maxDate:importedDates.at(-1)||null,months:Object.keys(monthCounts).sort(),monthCounts,...(reportStats?{reportStats,sourcePeriod:reportStats.sourcePeriod,entity:reportStats.entity}:{}),...(p.preview.journalStats?{journalStats:{...p.preview.journalStats}}:{})};
+ if(E.reportType(p.type))T.apply(session,p.type,normalized,{importSource,mode:p.mode,record});
+ else{if(p.mode==='replace'){session.datasets[p.type]=normalized;session.imports=session.imports.filter(i=>i.type!==p.type);}else session.datasets[p.type]=session.datasets[p.type].concat(normalized);session.imports.push(record);}
  if(p.type==='current')session.project.complete=false;if(p.type==='aging'){session.financial.agingComplete=false;session.financial.agingAsOf='';}monthlyFocus=null;contextOffset=0;session.demo=false;invalidateChecks();
  $('#importDialog').close();recompute();save();render();toast(`${E.TYPES[p.type].name}を読み込みました${p.preview.errors.length?`（${p.preview.errors.length}行を除外）`:''}`);
  if(KH&&['current','prior'].includes(p.type)&&p.shareKubun!==false){const shareCo=W.current(workspace),label=E.TYPES[p.type].name,file=p.file,opt={prefix:KUBUN_PREFIX[p.type],replace:p.mode==='replace'};file.arrayBuffer().then(buffer=>kubunShareJournals([{name:file.name,buffer}],shareCo,opt)).then(r=>toast(`${label}を読み込みました${r&&r.read?'（消費税区分チェックにも追加）':'（消費税区分チェックでは読めない形式のため追加なし）'}`)).catch(err=>toast('消費税区分チェックへの追加はできませんでした：'+err.message));}
@@ -5355,7 +5543,7 @@ document.addEventListener('click',async e=>{const el=e.target.closest('button');
  if(a==='template')template(el.dataset.type);
  if(a==='removeDataset'){const type=el.dataset.type;confirmAction('読込資料を削除',`${E.TYPES[type].name}を削除します。元のCSVファイルは削除されません。`,()=>{session.datasets[type]=[];session.imports=session.imports.filter(i=>i.type!==type);if(type==='current')session.project.complete=false;invalidateChecks();recompute();save();render();toast('読込資料を削除しました');});}
  if(a==='showCheck'){const f=result.findings.find(x=>x.check===el.dataset.check);if(f){selected=f.id;view='review';filter='all';search='';render();}}
- if(a==='closeImport'){$('#importDialog').close();files=[];pending=null;}if(a==='commitImport')await commitImport();
+ if(a==='closeImport'){$('#importDialog').close();files=[];pending=null;}if(a==='skipImport'){$('#importDialog').close();pending=null;await nextFile();}if(a==='commitImport')await commitImport();
 });
 document.addEventListener('change',e=>{
  if(e.target.dataset.financialRole){const key=e.target.dataset.financialRole;if(!/^(monthlyPL|monthlyBS):/.test(key)||!Object.hasOwn(F.roles,e.target.value))return;invalidateChecks();session.financial.accountRoles[key]=e.target.value;recompute();save();render();return;}

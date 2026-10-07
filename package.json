@@ -1,6 +1,6 @@
 {
   "name": "jikeika-review",
-  "version": "3.7.0",
+  "version": "3.9.0",
   "private": true,
   "description": "自計化レビュー：月次PL・BSの目次と、過去の仕訳からの取引先別期首推定",
   "scripts": {

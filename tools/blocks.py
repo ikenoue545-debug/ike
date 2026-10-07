@@ -9,6 +9,10 @@ MODULES = {
     'settlement.js': 'root.ReviewSettlement=',
     'monthly-page.js': 'F.page=page;',
     'treasury-ui.js': 'root.ReviewTreasuryUI=',
+    'engine.js': 'root.ReviewEngine=',
+    'financial.js': 'root.ReviewFinancial=',
+    'audit-ui.js': 'root.ReviewAuditUI=',
+    'app.js': 'window.LedgerApp=',
 }
 
 

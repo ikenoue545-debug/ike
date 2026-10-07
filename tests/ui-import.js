@@ -9,7 +9,7 @@ const ROOT=path.join(__dirname,'..'),FX=path.join(__dirname,'fixtures');
  const b=await chromium.launch({executablePath:process.env.CHROME||'/opt/pw-browsers/chromium-1194/chrome-linux/chrome'});
  const p=await b.newPage({viewport:{width:1440,height:960}});
  const errors=[];p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
- await p.goto('file://'+path.join(ROOT,'dist','自計化レビュー_v3.7.html'));
+ await p.goto('file://'+path.join(ROOT,'dist','自計化レビュー_v3.9.html'));
  await p.waitForFunction(()=>window.LedgerApp&&document.querySelector('[data-view]'));
  // 空の会社（個人・2026-01〜09）を用意
  await p.evaluate(()=>{const E=window.ReviewEngine,s=E.newSession();Object.assign(s.project,{name:'取込テスト（架空）',type:'individual',start:'2026-01',end:'2026-09'});window.LedgerApp.setSession(s);});

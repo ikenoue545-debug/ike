@@ -528,7 +528,7 @@ function reportIndex(c,type,dim){
   const l=g.cells.get(r.date);if(l)l.push(r);else g.cells.set(r.date,[r]);if(!r.opening)acc.dates.add(r.date);
  }
  // 同じ帳票・同じタグの読込に読取エラーがあれば、その内訳の金額は確定値として使わない
- by.errors=(c.session.imports||[]).some(i=>i.type===type&&i.errors>0&&(T?.slotOf?T.slotOf(i)===dim||(type==='monthlyBS'&&dim==='party'):true));
+ by.errors=(c.session.imports||[]).some(i=>i.type===type&&i.errors>0&&(T?.slotOf?T.slotOf(i)===dim:true));
  c.reportIdx.set(id,by);return by;
 }
 // clean：未選択なし・0（各タグが本当の残高）／residual：未選択に相殺額あり（累計の動き）／cash：預金・現金・カード（相手先ごとの入出金の累計）／untagged：未選択だけ／flow：PL
@@ -589,9 +589,10 @@ function reportedTagRows(c,s,t,dim){
   const r=finish(rows,'reported','balance',m=>valueAt(c,s,m));r.reportedOpening=exactSum(rows.filter(x=>x.reported).map(x=>x.opening));return r;
  }
  // residual・cash：帳票の累計の前月差（各タグの当月の動き）。残高としては表示しない
- const rows=list.map(g=>{const values={};let approx=false,prev=g.journalOnly?null:cell(g,p).value;
-  for(const m of months){const x=cell(g,m);approx||=x.approx;values[m]=Number.isSafeInteger(x.value)&&Number.isSafeInteger(prev)?x.value-prev:null;prev=x.value;}
-  return {...base(g),opening:null,approximate:approx,values};});
+ // held：表示月の最後の累計。動きが0円でも累計が残っている行（動かない立替金など）を「0円だけ」と扱わないために使う
+ const rows=list.map(g=>{const values={};let approx=false,prev=g.journalOnly?null:cell(g,p).value,held=null;
+  for(const m of months){const x=cell(g,m);approx||=x.approx;values[m]=Number.isSafeInteger(x.value)&&Number.isSafeInteger(prev)?x.value-prev:null;prev=x.value;if(Number.isSafeInteger(x.value))held=x.value;}
+  return {...base(g),opening:null,approximate:approx,values,held};});
  return finish(rows,'movement','movement',m=>deltaAt(c,s,m));
 }
 // 内訳の件数だけ（閉じた内訳の見出し用。行は作らない）

@@ -23,8 +23,8 @@ function amountText(it){
 // ---- 確認キューの上：段階表示と「次にやること」
 function steps(b){
  const cur=b.stages.find(s=>s.open)?.no||0;
- return `<ol class="fo-steps">${b.stages.map(s=>{const done=s.total-s.open,pct=s.total?Math.round(done/s.total*100):0,cls=[s.no===cur?'is-current':'',s.total&&!s.open?'is-done':'',!s.total?'is-empty':''].filter(Boolean).join(' ');
-  return `<li><button type="button" class="fo-step ${cls}" data-action="foStage" data-stage="${s.no}" title="${esc(s.purpose)}" aria-label="段階${s.no} ${esc(s.name)}：未対応 ${s.open}件／全 ${s.total}件"${s.no===cur?' aria-current="step"':''}><span class="fo-no">${s.total&&!s.open?'✓':s.no}</span><span class="fo-stepname">${esc(s.name)}</span><span class="fo-count"><strong>${s.open}</strong> / ${s.total}<span class="fo-unit">件</span></span><span class="fo-bar" aria-hidden="true"><span style="width:${pct}%"></span></span></button></li>`;}).join('')}</ol>`;
+ return `<ol class="fo-steps">${b.stages.map(s=>{const done=s.total-s.open-(s.asking||0),pct=s.total?Math.round(done/s.total*100):0,cls=[s.no===cur?'is-current':'',s.total&&!s.open&&!s.asking?'is-done':'',!s.total?'is-empty':''].filter(Boolean).join(' ');
+  return `<li><button type="button" class="fo-step ${cls}" data-action="foStage" data-stage="${s.no}" title="${esc(s.purpose)}" aria-label="段階${s.no} ${esc(s.name)}：未対応 ${s.open}件／全 ${s.total}件"${s.no===cur?' aria-current="step"':''}><span class="fo-no">${s.total&&!s.open&&!s.asking?'✓':s.no}</span><span class="fo-stepname">${esc(s.name)}</span><span class="fo-count"><strong>${s.open}</strong> / ${s.total}<span class="fo-unit">件</span></span><span class="fo-bar" aria-hidden="true"><span style="width:${pct}%"></span></span></button></li>`;}).join('')}</ol>`;
 }
 function nextCard(b){
  const it=b.next;
@@ -46,8 +46,8 @@ function exportBox(kind,b,session){
  return `<details class="fo-export" data-fo-export="${kind}"${state.open[kind]?' open':''}><summary>${esc(title)}<span class="fo-exportn">${list.length}件</span></summary><div class="fo-exportbody"><p class="small">${esc(note)}</p><pre class="fo-preview" tabindex="0" aria-label="${esc(title)}の内容">${esc(text)}</pre><div class="fo-exportacts"><button class="btn small" data-action="foCopy" data-kind="${kind}">コピー</button><button class="btn small" data-action="foCsv" data-kind="${kind}">CSVで保存</button><button class="btn small" data-action="foPrint" data-kind="${kind}">印刷</button></div></div></details>`;
 }
 function header(session,result){
- const b=FO.build(session,result),open=b.items.filter(i=>i.status!=='done').length;
- return `<section class="panel fo-order" aria-labelledby="foTitle"><div class="panelhead"><h2 id="foTitle">対応の順番</h2><span class="small">未対応 ${open}件／全 ${b.items.length}件（同じ論点はまとめて数えています）</span></div><div class="fo-orderbody">${steps(b)}${nextCard(b)}${goneNotice(session)}<div class="fo-exports">${exportBox('client',b,session)}${exportBox('office',b,session)}</div></div></section>`;
+ const b=FO.build(session,result),open=b.items.filter(i=>i.status==='open').length,asking=b.items.filter(i=>i.status==='asking').length;
+ return `<section class="panel fo-order" aria-labelledby="foTitle"><div class="panelhead"><h2 id="foTitle">対応の順番</h2><span class="small">未対応 ${open}件${asking?`・お客様へ確認中 ${asking}件`:''}／全 ${b.items.length}件（同じ論点はまとめて数えています）</span></div><div class="fo-orderbody">${steps(b)}${nextCard(b)}${goneNotice(session)}<div class="fo-exports">${exportBox('client',b,session)}${exportBox('office',b,session)}</div></div></section>`;
 }
 function toggle(){return `<button type="button" class="fo-toggle" data-action="foToggle" aria-pressed="${state.ordered}"><span class="fo-switch" aria-hidden="true"></span>順番どおりに並べる</button>`;}
 // 指摘の行に足す札（誰が動くか・関連件数）
@@ -105,7 +105,7 @@ function print(kind,session,result,opt={}){
 function panel(session,result){
  const b=FO.build(session,result),cur=b.stages.find(s=>s.open)?.no||0;
  const next=b.items.filter(i=>i.status==='open').slice(0,3);
- const counts=`<ol class="fo-mini">${b.stages.map(s=>`<li class="${s.no===cur?'is-current':''}${s.total&&!s.open?' is-done':''}"><span class="fo-no">${s.no}</span><span class="fo-mininame">${esc(s.name)}</span><span class="fo-minicount"><strong>${s.open}</strong>/${s.total}</span></li>`).join('')}</ol>`;
+ const counts=`<ol class="fo-mini">${b.stages.map(s=>`<li class="${s.no===cur?'is-current':''}${s.total&&!s.open&&!s.asking?' is-done':''}"><span class="fo-no">${s.no}</span><span class="fo-mininame">${esc(s.name)}</span><span class="fo-minicount"><strong>${s.open}</strong>/${s.total}</span></li>`).join('')}</ol>`;
  const rows=next.map((it,i)=>{const label=`${it.account&&!String(it.title).startsWith(it.account)?it.account+'：':''}${it.title}`,amt=amountText(it);
   const attr=it.materials?'data-view="data"':`data-month-finding="${esc(it.lead.id)}"`;
   return `<button class="fo-nextrow" ${attr}><span class="fo-nextno">${i+1}</span><span class="fo-nextmain"><span class="fo-nextmeta"><span class="fo-stagechip">段階${it.stage}</span>${actorBadge(it.actor)}</span><strong>${esc(label)}</strong>${amt?`<span class="small">${esc(amt)}</span>`:''}</span></button>`;}).join('');

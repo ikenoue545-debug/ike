@@ -72,15 +72,18 @@ function statementBody(model,type,session,result){
   return `<td class="${neg?'monthly-negative':''}${hot?' vt-hot '+(d>0?'up':'down'):''}">${cellButton(type,{type,account:g.account,month:m,hot,delta:d},v,'',title)}</td>`;
  }).join('');
  const o={months,cols,showOpening,blank},sel=ctx&&V.tagSources(session,result,type)[st.tagDim[type]]?st.tagDim[type]:'';
- const body=rows.map(({g,level})=>{
+ let tagHits=0;
+ const rowsHTML=rows.map(({g,level})=>{
   const can=!!ctx&&!g.computed&&g.role!=='summary',id=type+'|'+g.account,open=can&&st.open.has(id),s=can?V.series(ctx,type,g.account):null,total=type==='monthlyPL'?g.periodTotal:null;
   const label=`<span class="stmt-label${/[A-Za-z0-9()（）・\-]/.test(g.account)||[...g.account].length>9?' plain':''}${[...g.account].length>12?' long':''}">${esc(g.account)}</span>`;
   const acct=can?`<button class="vt-toggle" data-vt-acct="${ref(type,{type,account:g.account})}" aria-expanded="${open}"><span class="vt-tri" aria-hidden="true">${open?'▼':'▶'}</span>${label}</button>`:label;
   let html=`<tr class="stmt-${level}${g.role==='unknown'?' stmt-unknown':''}${open?' vt-open':''}"><th class="stmt-acct" title="${esc(g.account)}"><div class="stmt-acctin">${acct}${g.role==='unknown'?'<span class="stmt-flag" title="科目の分類を確認してください">分類?</span>':''}${g.approximate?'<span class="stmt-flag">概数</span>':''}</div></th>${showOpening?`<td class="stmt-open">${tri(openVal(g))}</td>`:''}${accountCells(g,s)}${type==='monthlyPL'?`<td class="stmt-total ${Number.isFinite(total)&&total<0?'monthly-negative':''}"><span class="stmt-num">${tri(total)}</span></td>`:''}</tr>`;
-  if(can&&sel)html+=tagBlock(type,g,session,result,st,o,sel,true);
+  if(can&&sel){const b=tagBlock(type,g,session,result,st,o,sel,true);if(b)tagHits++;html+=b;}
   if(open)html+=expanded(type,g,s,session,result,st,o);
   return html;
  }).join('');
+ // 検索に合う内訳がどの科目にも無いときは、表の先頭に1行だけ知らせる
+ const q0=sel?(st.queries[type]||''):'',body=(q0&&!tagHits&&!printAll?`<tr class="vt-tag vt-note"><td colspan="${cols}"><div class="notice vt-sticky">「${esc(q0)}」に合う${TAG_LABEL[sel]||''}はありません。</div></td></tr>`:'')+rowsHTML;
  const name=session?.project?.name||'',basis=taxBasis(session);
  const modeBar=type==='monthlyBS'&&!ledgerOnly?`<div class="vt-modebar" role="group" aria-label="BSの内訳の表示"><span class="small">内訳の表示</span>${[['balance','残高（BS内訳・期首から計算）'],['flow','当月の増減'],['cumulative','当期累計増減'],['estimate','取引先別の推計（過去の仕訳から）']].map(([k,label])=>`<button class="btn small" data-vt-bsmode="${k}" aria-pressed="${st.bsMode===k}">${label}</button>`).join('')}</div>`:'';
  return `<div class="stmt"><div class="stmt-head"><div class="stmt-title">月 次 推 移</div><div class="stmt-subtitle">${type==='monthlyPL'?'損 益 計 算 書':ledgerOnly?'貸 借 対 照 表 科 目 の 増 減':'貸 借 対 照 表'}</div><div class="stmt-meta"><div><strong>${esc(name)}</strong><span>${periodText(months)}</span></div><span>${basis}（単位：円）</span></div></div><div class="vt-hint"><span>▶ 科目名を押すと「取引先別・品目別・部門別」の内訳と月ごとの変動理由を開きます。金額を押すと、その月の変動理由と根拠の仕訳を右側に表示します。<span class="vt-hotlegend">色付きの金額</span>は大きく動いた月です。<span class="vt-changebadge up">増</span><span class="vt-changebadge down">減</span>は比較対象からの増減、<strong>△</strong>は金額自体のマイナスです。</span>${modeBar}</div>${ledgerOnly?'<div class="notice vt-ledgeronly">月次BSが未読込のため、仕訳帳から集計した<strong>各月の増減</strong>を表示しています（月末残高ではありません）。freeeの月次推移（貸借対照表）CSVを読み込むと月末残高で表示します。</div>':''}${ctx?tagBar(type,session,result,st):''}<div class="tablewrap stmt-wrap"><table class="stmt-table vt-table"><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
@@ -91,7 +94,7 @@ const searchKey=s=>String(s??'').normalize('NFKC').toLowerCase().replace(/\s+/g,
 let printAll=false;
 function dimsOf(type,session,result){const src=V.tagSources(session,result,type);return [...Object.keys(V.DIMS),...['segment1','segment2','segment3'].filter(d=>src[d])];}
 // 0円だけの行：表示月がすべて0円（「—」の未確定は0円と扱わない）、期首も0円か無し。仕訳との差がある行は残す。
-const zeroRow=(r,months)=>!r.jdiff&&!(Number.isFinite(r.opening)&&r.opening!==0)&&months.some(m=>r.values[m]===0)&&months.every(m=>r.values[m]===0||r.values[m]==null);
+const zeroRow=(r,months)=>!r.jdiff&&!(Number.isFinite(r.opening)&&r.opening!==0)&&!(Number.isFinite(r.held)&&r.held!==0)&&months.some(m=>r.values[m]===0)&&months.every(m=>r.values[m]===0||r.values[m]==null);
 const basisOf=tr=>tr.basis||(['estimated','cumulative'].includes(tr.mode)?'balance':'flow');
 function sizeOf(r,months,basis){
  if(basis==='balance'){for(let i=months.length-1;i>=0;i--){const v=r.values[months[i]];if(Number.isFinite(v))return Math.abs(v);}return Math.abs(r.opening||0);}
@@ -129,7 +132,7 @@ function cellTitle(tr,r,m,dim){
 function tagRowHTML(type,g,tr,r,dim,o){
  const months=o.months,pl=type==='monthlyPL',click=Object.hasOwn(V.DIMS,dim);
  const total=pl&&months.every(m=>Number.isFinite(r.values[m]))?months.reduce((a,m)=>a+r.values[m],0):null;
- const flags=[r.estimated?'参考推計':'',r.derived?'期首＋仕訳':'',r.openingFromPrior?'期首は前期末':'',r.journalOnly?'仕訳のみ':'',r.approximate?'概数':''].filter(Boolean).map(f=>`<small class="stmt-flag">${f}</small>`).join('')+(r.jdiff?'<small class="stmt-flag vt-jflag" title="帳票の金額と、読み込んだ仕訳から集計した金額が違う月があります">仕訳との差</small>':'');
+ const flags=[r.estimated?'参考推計':'',r.derived?'期首＋仕訳':'',r.openingFromPrior?'期首は前期末':'',r.journalOnly?'仕訳のみ':'',r.approximate?'概数':'',tr.basis==='movement'&&Number.isFinite(r.held)&&r.held!==0?'累計 '+Number(r.held).toLocaleString('ja-JP')+'円':''].filter(Boolean).map(f=>`<small class="stmt-flag">${f}</small>`).join('')+(r.jdiff?'<small class="stmt-flag vt-jflag" title="帳票の金額と、読み込んだ仕訳から集計した金額が違う月があります">仕訳との差</small>':'');
  const cells=months.map(m=>{const v=r.values[m],jd=Number.isFinite(r.journalDiff?.[m]),title=cellTitle(tr,r,m,dim);
   return `<td class="${v<0?'monthly-negative':''}${jd?' vt-jdiff':''}">${click?cellButton(type,{type,account:g.account,month:m,dim,tag:r.key},v,'',title):`<span class="stmt-num" title="${esc(title)}">${tri(v)}</span>`}</td>`;}).join('');
  return `<tr class="vt-tag${r.missing?' vt-missing':''}${o.inline?' vt-inline':''}"><th class="stmt-acct" title="${esc(r.label)}"><div class="vt-taglabel">${TAG_ICON}<span>${esc(r.label)}</span>${flags}</div></th>${o.showOpening?`<td class="stmt-open">${tr.basis==='movement'?'':tri(r.opening)}</td>`:''}${cells}${pl?`<td class="stmt-total"><span class="stmt-num">${tri(total)}</span></td>`:''}</tr>`;
@@ -139,6 +142,8 @@ function tagBlock(type,g,session,result,st,o,dim,inline){
  const tr=V.tagRows(session,result,type,g.account,dim,st.bsMode);if(!tr)return '';
  const months=o.months,did=type+'|'+g.account+'|'+dim,out=[],noun=TAG_LABEL[dim],line=(text,cls='')=>`<tr class="vt-tag vt-note${cls}"><th class="stmt-acct"><div class="vt-taglabel vt-wrap"><span>${text}</span></div></th>${o.blank(o.cols-1)}</tr>`;
  if(tr.mode==='untagged')return line(`${noun}の入力なし<small>（すべて未選択）</small>`,' vt-untagged');
+ // その種類のタグ別の帳票は読込済みで、この科目だけ載っていない（freeeは合計0円の科目を品目別・部門別に出さない）
+ if(inline&&tr.mode==='unknown'&&root.ReviewTagReports?.has(session,type,dim))return line(`${noun}の入力なし<small>（${noun}別の帳票にこの科目がありません）</small>`,' vt-untagged');
  if(inline&&tr.mode==='unknown')return line(type==='monthlyBS'?`${noun}別の残高は資料から確定できません（「内訳の表示」で増減に切り替え）`:'科目の分類が未確定のため、内訳を表示できません');
  if(!inline&&type==='monthlyBS')out.push(`<tr class="vt-tag vt-note"><td colspan="${o.cols}"><div class="notice vt-sticky">${bsNote(tr,dim)} 未読込の金額を0円とは扱いません。</div></td></tr>`);
  else if(inline&&tr.mode==='movement')out.push(line(tr.semantic==='cash'?'累計の動き（相手先ごとの入出金）':'累計の動き（未選択に相殺額あり）',' vt-sem'));

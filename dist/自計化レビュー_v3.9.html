@@ -2409,38 +2409,55 @@ function slotOf(i){
 function compact(type,r,importSource){
  return {type,tagDimension:r.tagDimension,tagValue:r.tagValue,account:r.account,...(r.accountCode?{accountCode:r.accountCode}:{}),...(r.category?{category:r.category}:{}),...(r.role?{role:r.role}:{}),date:r.date,amount:r.amount,unit:r.unit,...(r.opening?{opening:true}:{}),...(Number.isInteger(r.line)?{line:r.line}:{}),importSource};
 }
-function cellKey(r){return key(r.account)+'\u0001'+r.date;}
+// 帳票のセル：科目・年月・期首かどうか。置き換えは新しい帳票が含むセル（年月・期首）だけにとどめる。
+const cov=r=>r.date+(r.opening?'#期首':'');
+function cellKey(r){return key(r.account)+'\u0001'+cov(r);}
+// 千円の帳票は千円未満を切り捨てるため、円の値との差が1,000円未満なら同じ値とみなす
+function sameAmount(a,b){
+ if(!Number.isSafeInteger(a.amount)||!Number.isSafeInteger(b.amount))return a.amount===b.amount;
+ if(a.unit===b.unit)return a.amount===b.amount;
+ return Math.abs(a.amount-b.amount)<1000;
+}
 // 取り込む前に、読込済みの帳票との関係を調べる（ダイアログの注意と、確定時の処理で同じ結果を使う）
 function plan(session,type,items,{importSource='',mode='replace'}={}){
  const dim=items.find(r=>r.tagDimension)?.tagDimension||'';
  const old=session.datasets?.[type]||[],oldTags=(session.tagReports||[]);
  const newParents=items.filter(r=>!r.tagDimension),newDetail=items.filter(r=>r.tagDimension);
+ const covered=new Set(items.map(cov)),inside=r=>covered.has(cov(r));
  const newAccounts=new Set(newParents.map(r=>key(r.account))),newCells=new Map(newParents.map(r=>[cellKey(r),r]));
- const oldParents=old.filter(r=>!r.tagDimension);
- // 科目合計の食い違い（同じ科目・同じ月で金額が違う）
+ const oldParents=old.filter(r=>!r.tagDimension&&inside(r));
+ // 科目合計の食い違い（同じ科目・同じ月で金額が違う。円と千円の端数差は除く）
  const conflicts=[];
- for(const r of oldParents){const n=newCells.get(cellKey(r));if(n&&Number.isSafeInteger(r.amount)&&Number.isSafeInteger(n.amount)&&r.amount!==n.amount)conflicts.push({account:r.account,date:r.date,old:r.amount,new:n.amount,source:r.source||''});}
+ for(const r of oldParents){const n=newCells.get(cellKey(r));if(n&&!sameAmount(r,n))conflicts.push({account:r.account,date:r.date,...(r.opening?{opening:true}:{}),old:r.amount,new:n.amount,source:r.source||''});}
  const conflictAccounts=new Set(conflicts.map(c=>key(c.account)));
- // 新しい帳票にない科目：すべて0円なら残す（品目別・部門別は合計0の科目を省くため）。0円でなければ外して知らせる
+ // 新しい帳票にない科目（同じ月の分）：すべて0円なら残す（品目別・部門別は合計0の科目を省くため）。0円でなければ外して知らせる
  const absent=new Map();for(const r of oldParents){const k=key(r.account);if(newAccounts.has(k))continue;const g=absent.get(k)||{account:r.account,zero:true};if(Number.isSafeInteger(r.amount)&&r.amount!==0)g.zero=false;absent.set(k,g);}
  const droppedAccounts=[...absent.values()].filter(g=>!g.zero).map(g=>g.account),droppedKeys=new Set(droppedAccounts.map(key));
- // 置き換えで外れる他のタグ別の内訳：科目合計が食い違う科目・外れる科目の分
- const staleKey=r=>conflictAccounts.has(key(r.account))||droppedKeys.has(key(r.account));
+ // 置き換えで外れる他のタグ別の内訳：科目合計が食い違う科目・外れる科目の、同じ月の分
+ const staleKey=r=>inside(r)&&(conflictAccounts.has(key(r.account))||droppedKeys.has(key(r.account)));
  const otherDims=new Map();
  const noteStale=(d,r)=>{if(!staleKey(r))return;const g=otherDims.get(d)||new Set();g.add(r.account);otherDims.set(d,g);};
  for(const r of old)if(r.tagDimension&&r.tagDimension!==dim)noteStale(r.tagDimension,r);
  for(const r of oldTags)if(r.type===type&&r.tagDimension!==dim)noteStale(r.tagDimension,r);
  const stale=[...otherDims].map(([d,set])=>({dim:d,label:DIMS[d]||d,accounts:[...set]}));
  const overlap=mode==='append'?appendOverlap(session,type,items):0;
- return {type,dim,mode,parents:newParents.length,details:newDetail.length,detailAccounts:new Set(newDetail.map(r=>key(r.account))).size,conflicts,droppedAccounts,stale,overlap,importSource};
+ // 新しい帳票の期間の外にある読込済みの行は残る（別の年度・期首など）
+ const outside=old.filter(r=>!r.tagDimension&&!inside(r)).length;
+ return {type,dim,mode,parents:newParents.length,details:newDetail.length,detailAccounts:new Set(newDetail.map(r=>key(r.account))).size,conflicts,droppedAccounts,stale,overlap,outside,months:[...covered].sort(),importSource};
 }
 function appendOverlap(session,type,items){
- const k=r=>JSON.stringify([r.date,key(r.account),r.tagDimension||'',key(r.tagValue)]);
+ const k=r=>JSON.stringify([cov(r),key(r.account),r.tagDimension||'',key(r.tagValue)]);
  const keys=new Set([...(session.datasets?.[type]||[]),...(session.tagReports||[]).filter(r=>r.type===type)].map(k));
  return items.filter(r=>keys.has(k(r))).length;
 }
+// 確定後の行数（上限の確認用）。session は変えない。
+function preview(session,type,items,opt={}){
+ const copy={datasets:{...session.datasets,[type]:(session.datasets?.[type]||[]).slice()},tagReports:(session.tagReports||[]).slice(),imports:(session.imports||[]).slice()};
+ apply(copy,type,items,opt);
+ return {dataset:copy.datasets[type].length,tagReports:copy.tagReports.length};
+}
 // 確定：session を書き換える（datasets[type] と tagReports と imports の該当の枠）
-function apply(session,type,items,{importSource,mode='replace',record}){
+function apply(session,type,items,{importSource,mode='replace',record}={}){
  const p=plan(session,type,items,{importSource,mode}),dim=p.dim;
  const datasetRows=items.filter(r=>inDataset(type,r)),tagRows=items.filter(r=>!inDataset(type,r)).map(r=>compact(type,r,importSource));
  if(!Array.isArray(session.tagReports))session.tagReports=[];
@@ -2448,36 +2465,55 @@ function apply(session,type,items,{importSource,mode='replace',record}){
   session.datasets[type]=session.datasets[type].concat(datasetRows);
   if(tagRows.length)session.tagReports=session.tagReports.concat(tagRows);
  }else{
+  const covered=new Set(items.map(cov)),inside=r=>covered.has(cov(r));
   const conflictKeys=new Set(p.conflicts.map(c=>key(c.account))),dropKeys=new Set(p.droppedAccounts.map(key)),newAccounts=new Set(items.filter(r=>!r.tagDimension).map(r=>key(r.account)));
-  const stale=r=>conflictKeys.has(key(r.account))||dropKeys.has(key(r.account));
-  const keep=session.datasets[type].filter(r=>{
+  const stale=r=>inside(r)&&(conflictKeys.has(key(r.account))||dropKeys.has(key(r.account)));
+  const old=session.datasets[type];
+  const keep=old.filter(r=>{
+   if(!inside(r))return true;
    if(!r.tagDimension)return !newAccounts.has(key(r.account))&&!dropKeys.has(key(r.account));
    if(r.tagDimension===dim)return false;
    return !stale(r);
   });
-  session.datasets[type]=ordered(session.datasets[type],keep,reuse(session.datasets[type],datasetRows));
-  session.tagReports=session.tagReports.filter(r=>r.type!==type||r.tagDimension!==dim&&!stale(r)).concat(tagRows);
-  session.imports=(session.imports||[]).filter(i=>i.type!==type||slotOf(i)!==dim);
+  const freshRows=reuse(old.filter(inside),datasetRows),oldSame=session.tagReports.filter(r=>r.type===type&&r.tagDimension===dim&&inside(r)),freshTags=reuseTags(oldSame,tagRows);
+  session.datasets[type]=ordered(old,keep,freshRows);
+  session.tagReports=session.tagReports.filter(r=>r.type!==type||!inside(r)||r.tagDimension!==dim&&!stale(r)).concat(freshTags);
+  // 同じ値の内訳は読込済みの行を残すので、その読込元もこの読込の分として記録する
+  const adopted=[...new Set([...freshRows.filter(r=>r.tagDimension),...freshTags].map(r=>r.importSource).filter(x=>x&&x!==importSource))];
+  if(record&&adopted.length)record={...record,reusedSources:adopted};
+  // 同じ枠の読込履歴は、新しい帳票の期間にすべて含まれるものだけ外す（別の年度の履歴は残す）
+  const months=i=>[...(i.reportStats?.months||i.months||[]),...(i.reportStats?.openingMonth?[i.reportStats.openingMonth+'#期首']:[])];
+  session.imports=(session.imports||[]).filter(i=>i.type!==type||slotOf(i)!==dim||!months(i).length||months(i).some(m=>!covered.has(m)));
  }
  if(record)session.imports.push({...record,tagDimension:dim});
  return p;
 }
-// 科目合計がすべての月で読込済みと同じ科目は、読込済みの行をそのまま使う。
-// 確認結果のIDは科目合計の行（ファイル名・行番号を含む）から作るため、別のタグの帳票を足しただけでIDを変えない。
+// 読込済みと同じ値の科目は、読込済みの行をそのまま使う（確認結果のIDは行のファイル名・行番号から作るため、
+// 別のタグの帳票を足しただけ・同じCSVを別名で読み直しただけでIDを変えない）。円の値は千円の値で上書きしない。
 function reuse(old,fresh){
- const group=rows=>{const m=new Map();for(const r of rows){if(r.tagDimension)continue;const k=key(r.account);if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;};
- const cell=r=>[r.date,r.opening?1:0,r.amount,r.unit].join('|'),before=group(old),same=new Set();
- for(const [k,b] of group(fresh)){const a=before.get(k),s=new Set((a||[]).map(cell));if(a&&a.length===b.length&&s.size===a.length&&b.every(r=>s.has(cell(r))))same.add(k);}
+ const group=rows=>{const m=new Map();for(const r of rows){const k=key(r.account)+'\u0001'+(r.tagDimension?r.tagDimension+'\u0001'+key(r.tagValue):'');if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;};
+ const before=group(old),same=new Set();
+ for(const [k,b] of group(fresh)){
+  const a=before.get(k);if(!a||a.length!==b.length)continue;
+  const byCell=new Map(a.map(r=>[cov(r),r]));
+  if(byCell.size===a.length&&b.every(r=>{const o=byCell.get(cov(r));return o&&sameAmount(o,r)&&(o.unit===r.unit||o.unit===1);}))same.add(k);
+ }
  if(!same.size)return fresh;
  const done=new Set();
- return fresh.flatMap(r=>{const k=key(r.account);if(r.tagDimension||!same.has(k))return [r];if(done.has(k))return [];done.add(k);return before.get(k);});
+ return fresh.flatMap(r=>{const k=key(r.account)+'\u0001'+(r.tagDimension?r.tagDimension+'\u0001'+key(r.tagValue):'');if(!same.has(k))return [r];if(done.has(k))return [];done.add(k);return before.get(k);});
+}
+function reuseTags(old,fresh){
+ if(!old.length)return fresh;
+ const id=r=>[key(r.account),key(r.tagValue),cov(r),r.amount,r.unit].join('\u0001'),map=new Map(old.map(r=>[id(r),r]));
+ return fresh.map(r=>map.get(id(r))||r);
 }
 // 科目の並びは新しい帳票の順。新しい帳票にない科目は、前の帳票で直前にあった科目の後ろに置く。
 // 科目ごとに合計の行を先、タグの行を後にする（科目の並びは最初に出た行で決まるため）。
 function ordered(old,keep,fresh){
  const order=[],seen=new Set(),push=k=>{if(!seen.has(k)){seen.add(k);order.push(k);}};
  for(const r of fresh)push(key(r.account));
- let prev=null;for(const r of old){const k=key(r.account);if(!seen.has(k)&&keep.some(x=>key(x.account)===k)){const at=prev===null?0:order.indexOf(prev)+1;order.splice(at,0,k);seen.add(k);}if(seen.has(k))prev=k;}
+ const keepKeys=new Set(keep.map(x=>key(x.account)));
+ let prev=null;for(const r of old){const k=key(r.account);if(!seen.has(k)&&keepKeys.has(k)){const at=prev===null?0:order.indexOf(prev)+1;order.splice(at,0,k);seen.add(k);}if(seen.has(k))prev=k;}
  for(const r of keep)push(key(r.account));
  const by=new Map(order.map(k=>[k,{parents:[],tags:[]}]));
  for(const r of [...fresh,...keep])by.get(key(r.account))[r.tagDimension?'tags':'parents'].push(r);
@@ -2504,7 +2540,7 @@ function rows(session,type,dim,account){
  return [...by.values()];
 }
 function has(session,type,dim){return dim==='party'&&isBS(type)?(session.datasets?.[type]||[]).some(r=>r.tagDimension==='party'):(session.tagReports||[]).some(r=>r.type===type&&r.tagDimension===dim);}
-root.ReviewTagReports={DIMS,REPORT_TYPES,slotOf,plan,apply,materials,rows,has,inDataset};
+root.ReviewTagReports={DIMS,REPORT_TYPES,slotOf,plan,apply,preview,materials,rows,has,inDataset};
 })(typeof window!=='undefined'?window:globalThis);
 </script>
 <script>(function(root){
@@ -3767,7 +3803,7 @@ function reportIndex(c,type,dim){
   const l=g.cells.get(r.date);if(l)l.push(r);else g.cells.set(r.date,[r]);if(!r.opening)acc.dates.add(r.date);
  }
  // 同じ帳票・同じタグの読込に読取エラーがあれば、その内訳の金額は確定値として使わない
- by.errors=(c.session.imports||[]).some(i=>i.type===type&&i.errors>0&&(T?.slotOf?T.slotOf(i)===dim||(type==='monthlyBS'&&dim==='party'):true));
+ by.errors=(c.session.imports||[]).some(i=>i.type===type&&i.errors>0&&(T?.slotOf?T.slotOf(i)===dim:true));
  c.reportIdx.set(id,by);return by;
 }
 // clean：未選択なし・0（各タグが本当の残高）／residual：未選択に相殺額あり（累計の動き）／cash：預金・現金・カード（相手先ごとの入出金の累計）／untagged：未選択だけ／flow：PL
@@ -3828,9 +3864,10 @@ function reportedTagRows(c,s,t,dim){
   const r=finish(rows,'reported','balance',m=>valueAt(c,s,m));r.reportedOpening=exactSum(rows.filter(x=>x.reported).map(x=>x.opening));return r;
  }
  // residual・cash：帳票の累計の前月差（各タグの当月の動き）。残高としては表示しない
- const rows=list.map(g=>{const values={};let approx=false,prev=g.journalOnly?null:cell(g,p).value;
-  for(const m of months){const x=cell(g,m);approx||=x.approx;values[m]=Number.isSafeInteger(x.value)&&Number.isSafeInteger(prev)?x.value-prev:null;prev=x.value;}
-  return {...base(g),opening:null,approximate:approx,values};});
+ // held：表示月の最後の累計。動きが0円でも累計が残っている行（動かない立替金など）を「0円だけ」と扱わないために使う
+ const rows=list.map(g=>{const values={};let approx=false,prev=g.journalOnly?null:cell(g,p).value,held=null;
+  for(const m of months){const x=cell(g,m);approx||=x.approx;values[m]=Number.isSafeInteger(x.value)&&Number.isSafeInteger(prev)?x.value-prev:null;prev=x.value;if(Number.isSafeInteger(x.value))held=x.value;}
+  return {...base(g),opening:null,approximate:approx,values,held};});
  return finish(rows,'movement','movement',m=>deltaAt(c,s,m));
 }
 // 内訳の件数だけ（閉じた内訳の見出し用。行は作らない）
@@ -4791,7 +4828,7 @@ function context(session,model){
 }
 function evidence(ctx,type,dim,account,tag,month,amount){
  const r=ctx.raw(type,dim,account,tag,month);
- return {date:month,statement:E.reportType(type)==='monthlyPL'?'PL':'BS',account:`${account}（${DIMS[dim]||dim}：${tag}）`,amount:finite(r?.amount)?r.amount:amount,source:r?.source||ctx.files.get(r?.importSource)||'',line:Number.isInteger(r?.line)?r.line:'—',tagDimension:dim,tagValue:tag,importSource:r?.importSource||''};
+ return {date:month,statement:E.reportType(type)==='monthlyPL'?'PL':'BS',account:`${account}（${DIMS[dim]||dim}：${tag}）`,amount:finite(r?.amount)?r.amount:amount,source:(E.TYPES[type]?.name||type)+'（'+(DIMS[dim]||dim)+'別）',line:Number.isInteger(r?.line)?r.line:'—',tagDimension:dim,tagValue:tag,importSource:''};
 }
 
 // ---- PL：タグ別の収益・費用の構成
@@ -4939,7 +4976,7 @@ function checks(session){
   const expected=i.reportStats?.tagRows;if(!i.importSource||!finite(expected)||expected<=0)continue;
   const src=dim==='party'&&E.reportType(i.type)==='monthlyBS'?(session.datasets?.[i.type]||[]).filter(r=>r.tagDimension==='party'):(session.tagReports||[]).filter(r=>r.type===i.type&&r.tagDimension===dim);
   if(src.length&&!src.some(r=>r.importSource))continue;
-  const mine=src.filter(r=>r.importSource===i.importSource);
+  const own=new Set([i.importSource,...(Array.isArray(i.reusedSources)?i.reusedSources:[])]),mine=src.filter(r=>own.has(r.importSource));
   if(mine.length<expected){
    const present=new Set(mine.map(r=>key(r.account))),before=[...new Set((i.reportStats.detailReportedTotals||[]).map(x=>x.account))].filter(a=>!present.has(key(a)));
    conflict.push({kind:'removed',type:i.type,dim,label:DIMS[dim]||dim,file:i.name||'',importSource:i.importSource,removed:expected-mine.length,kept:mine.length,accounts:before});
@@ -5086,7 +5123,9 @@ function stageOf(f){
  if(f.materials)return 1;
  const kind=tagKind(f),text=String(f.title||'')+' '+String(f.reason||''),c=ctx(f);
  if(f.integrityCheck||f.check==='sync'||kind==='tag-mismatch'||kind==='tag-conflict')return 1;
- if(f.check==='monthly'&&/帳票と仕訳|帳票との照合|読込|読取|未読込|照合できません/.test(text))return 1;
+ // 回収・支払（取引先別の動きなし・停滞など）は段階3。「読込済み9か月」などの語で段階1にしない
+ if(f.check==='monthly'&&prefixed(f,'settlement')!=null)return 3;
+ if(f.check==='monthly'&&/帳票と仕訳|帳票との照合|未読込|読込範囲|読み込まれて|読取エラー|照合できません/.test(text))return 1;
  if(f.check!=='unreg'&&f.dataReview&&f.level==='info')return 1;
  if(f.level==='difference'||f.balanceCheck||S2.has(f.check)||c[0]==='continuity')return 2;
  if(f.check==='monthly'&&/マイナス/.test(f.title||'')&&/現金|預金|借入|リース債務/.test(accountOf(f)))return 2;
@@ -5104,7 +5143,8 @@ function actorOf(f){
  if(!f)return 'note';
  if(f.materials)return 'request';
  const st=stageOf(f),kind=tagKind(f),text=String(f.title||'')+' '+String(f.reason||'');
- if(st===1)return MISSING.test(text)&&!/読取エラー|重複/.test(f.title||'')?'request':'office';
+ // 資金・照合の条件の確認（網羅性・期首のつながり）は事務所で確認する。お客様に送るのは、名前の分かる資料が足りないときだけ
+ if(st===1)return !f.treasuryCheck&&!f.integrityCheck&&MISSING.test(text)&&!/読取エラー|重複/.test(f.title||'')?'request':'office';
  if(st===2)return 'office';
  if(kind==='tag-clearing')return 'fix';
  if(st===6)return kind||f.level!=='info'?'fix':'note';
@@ -5145,7 +5185,7 @@ function partOf(f){
 // 同じ論点の鍵。行の署名や設定値を含めないので、設定を変えて再分析しても変わらない
 function topicKey(f){
  if(f?.materials)return '1|materials|'+f.materials;
- return [stageOf(f),family(f),nkey(accountOf(f)),partOf(f)].join('|');
+ return [stageOf(f),family(f),nkey(shownAccount(f)),partOf(f)].join('|');
 }
 function partyLabel(f){
  const c=ctx(f);if(c[0]==='tag-report')return c[5]&&c[5]!=='未選択'?String(c[5]):'';
@@ -5213,7 +5253,7 @@ function build(session,result){
   const p=prev.get(d.topic);if(!p||String(d.at||'')>=String(p.at||''))prev.set(d.topic,{id,status:d.status,note:String(d.note||''),label:d.reviewLabel||'',period:d.reviewPeriod||'',at:d.at||''});
  }
  for(const it of items){const p=prev.get(it.topic);if(p&&it.findings.some(f=>(dec[f.id]?.status||'open')==='open'))it.carried=p;}
- const stages=STAGES.map(s=>{const xs=items.filter(i=>i.stage===s.no);return {...s,items:xs,open:xs.filter(i=>i.status!=='done').length,total:xs.length};});
+ const stages=STAGES.map(s=>{const xs=items.filter(i=>i.stage===s.no);return {...s,items:xs,open:xs.filter(i=>i.status==='open').length,asking:xs.filter(i=>i.status==='asking').length,total:xs.length};});
  const next=items.find(i=>i.status==='open')||items.find(i=>i.status==='asking')||null;
  const byId=new Map();for(const it of items)for(const f of it.findings)byId.set(f.id,it);
  const clientList=items.filter(i=>(i.actor==='ask'||i.actor==='fix'||i.actor==='request')&&i.status!=='done').map(i=>entry(i,session));
@@ -5263,7 +5303,7 @@ function clientText(list,meta={}){
 }
 function officeText(list,meta={}){
  const head=['事務所の作業リスト',[meta.name,meta.period].filter(Boolean).join('　')].filter(Boolean);
- const body=(list||[]).map((x,i)=>`${i+1}. [${x.stage} ${x.stageName}] ${x.account?x.account+(x.party?'（'+x.party+'）':'')+'：':''}${x.title}${x.amount?'（'+x.amountLabel+'）':''}${x.monthLabel?' '+x.monthLabel:''}${x.count>1?' 関連'+x.count+'件':''}${x.step?'\n   次に確認すること：'+x.step:''}`);
+ const body=(list||[]).map((x,i)=>`${i+1}. [${x.stage} ${x.stageName}] ${x.account&&!String(x.title).startsWith(x.account)?x.account+(x.party?'（'+x.party+'）':'')+'：':''}${x.title}${x.amount?'（'+x.amountLabel+'）':''}${x.monthLabel?' '+x.monthLabel:''}${x.count>1?' 関連'+x.count+'件':''}${x.step?'\n   次に確認すること：'+x.step:''}`);
  return head.join('\n')+'\n\n'+(body.length?body.join('\n'):'現在、事務所で確認する項目はありません。')+'\n';
 }
 // CSVのセル：式として読まれる文字（= + - @ タブ CR）で始まるときは先頭に ' を付ける
@@ -5286,7 +5326,8 @@ function compare(prev,built){
 function reconcile(session,built,now){
  if(!session||typeof session!=='object')return false;if(!session.manual||typeof session.manual!=='object')session.manual={};
  const sig=dataSig(session),old=session.manual.feedbackSnapshot,snap=snapshot(built,sig,now);
- if(!old||typeof old!=='object'||!Array.isArray(old.topics)){session.manual.feedbackSnapshot={...snap,gone:[]};return true;}
+ // 資料を読む前（読込なし）の状態とは比べない：読み込んだだけで「解消した可能性」が出てしまうため
+ if(!old||typeof old!=='object'||!Array.isArray(old.topics)||!(session.imports||[]).length||old.empty){session.manual.feedbackSnapshot={...snap,gone:[],...((session.imports||[]).length?{}:{empty:true})};return !old||JSON.stringify(old.topics)!==JSON.stringify(snap.topics)||!!old.empty!==!(session.imports||[]).length;}
  if(old.sig!==sig){
   const have=new Set(built.items.map(i=>i.topic)),{gone}=compare(old,built);
   const keep=(Array.isArray(old.gone)?old.gone:[]).filter(t=>!have.has(t.topic)&&!gone.some(g=>g.topic===t.topic));
@@ -5381,15 +5422,18 @@ function statementBody(model,type,session,result){
   return `<td class="${neg?'monthly-negative':''}${hot?' vt-hot '+(d>0?'up':'down'):''}">${cellButton(type,{type,account:g.account,month:m,hot,delta:d},v,'',title)}</td>`;
  }).join('');
  const o={months,cols,showOpening,blank},sel=ctx&&V.tagSources(session,result,type)[st.tagDim[type]]?st.tagDim[type]:'';
- const body=rows.map(({g,level})=>{
+ let tagHits=0;
+ const rowsHTML=rows.map(({g,level})=>{
   const can=!!ctx&&!g.computed&&g.role!=='summary',id=type+'|'+g.account,open=can&&st.open.has(id),s=can?V.series(ctx,type,g.account):null,total=type==='monthlyPL'?g.periodTotal:null;
   const label=`<span class="stmt-label${/[A-Za-z0-9()（）・\-]/.test(g.account)||[...g.account].length>9?' plain':''}${[...g.account].length>12?' long':''}">${esc(g.account)}</span>`;
   const acct=can?`<button class="vt-toggle" data-vt-acct="${ref(type,{type,account:g.account})}" aria-expanded="${open}"><span class="vt-tri" aria-hidden="true">${open?'▼':'▶'}</span>${label}</button>`:label;
   let html=`<tr class="stmt-${level}${g.role==='unknown'?' stmt-unknown':''}${open?' vt-open':''}"><th class="stmt-acct" title="${esc(g.account)}"><div class="stmt-acctin">${acct}${g.role==='unknown'?'<span class="stmt-flag" title="科目の分類を確認してください">分類?</span>':''}${g.approximate?'<span class="stmt-flag">概数</span>':''}</div></th>${showOpening?`<td class="stmt-open">${tri(openVal(g))}</td>`:''}${accountCells(g,s)}${type==='monthlyPL'?`<td class="stmt-total ${Number.isFinite(total)&&total<0?'monthly-negative':''}"><span class="stmt-num">${tri(total)}</span></td>`:''}</tr>`;
-  if(can&&sel)html+=tagBlock(type,g,session,result,st,o,sel,true);
+  if(can&&sel){const b=tagBlock(type,g,session,result,st,o,sel,true);if(b)tagHits++;html+=b;}
   if(open)html+=expanded(type,g,s,session,result,st,o);
   return html;
  }).join('');
+ // 検索に合う内訳がどの科目にも無いときは、表の先頭に1行だけ知らせる
+ const q0=sel?(st.queries[type]||''):'',body=(q0&&!tagHits&&!printAll?`<tr class="vt-tag vt-note"><td colspan="${cols}"><div class="notice vt-sticky">「${esc(q0)}」に合う${TAG_LABEL[sel]||''}はありません。</div></td></tr>`:'')+rowsHTML;
  const name=session?.project?.name||'',basis=taxBasis(session);
  const modeBar=type==='monthlyBS'&&!ledgerOnly?`<div class="vt-modebar" role="group" aria-label="BSの内訳の表示"><span class="small">内訳の表示</span>${[['balance','残高（BS内訳・期首から計算）'],['flow','当月の増減'],['cumulative','当期累計増減'],['estimate','取引先別の推計（過去の仕訳から）']].map(([k,label])=>`<button class="btn small" data-vt-bsmode="${k}" aria-pressed="${st.bsMode===k}">${label}</button>`).join('')}</div>`:'';
  return `<div class="stmt"><div class="stmt-head"><div class="stmt-title">月 次 推 移</div><div class="stmt-subtitle">${type==='monthlyPL'?'損 益 計 算 書':ledgerOnly?'貸 借 対 照 表 科 目 の 増 減':'貸 借 対 照 表'}</div><div class="stmt-meta"><div><strong>${esc(name)}</strong><span>${periodText(months)}</span></div><span>${basis}（単位：円）</span></div></div><div class="vt-hint"><span>▶ 科目名を押すと「取引先別・品目別・部門別」の内訳と月ごとの変動理由を開きます。金額を押すと、その月の変動理由と根拠の仕訳を右側に表示します。<span class="vt-hotlegend">色付きの金額</span>は大きく動いた月です。<span class="vt-changebadge up">増</span><span class="vt-changebadge down">減</span>は比較対象からの増減、<strong>△</strong>は金額自体のマイナスです。</span>${modeBar}</div>${ledgerOnly?'<div class="notice vt-ledgeronly">月次BSが未読込のため、仕訳帳から集計した<strong>各月の増減</strong>を表示しています（月末残高ではありません）。freeeの月次推移（貸借対照表）CSVを読み込むと月末残高で表示します。</div>':''}${ctx?tagBar(type,session,result,st):''}<div class="tablewrap stmt-wrap"><table class="stmt-table vt-table"><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
@@ -5400,7 +5444,7 @@ const searchKey=s=>String(s??'').normalize('NFKC').toLowerCase().replace(/\s+/g,
 let printAll=false;
 function dimsOf(type,session,result){const src=V.tagSources(session,result,type);return [...Object.keys(V.DIMS),...['segment1','segment2','segment3'].filter(d=>src[d])];}
 // 0円だけの行：表示月がすべて0円（「—」の未確定は0円と扱わない）、期首も0円か無し。仕訳との差がある行は残す。
-const zeroRow=(r,months)=>!r.jdiff&&!(Number.isFinite(r.opening)&&r.opening!==0)&&months.some(m=>r.values[m]===0)&&months.every(m=>r.values[m]===0||r.values[m]==null);
+const zeroRow=(r,months)=>!r.jdiff&&!(Number.isFinite(r.opening)&&r.opening!==0)&&!(Number.isFinite(r.held)&&r.held!==0)&&months.some(m=>r.values[m]===0)&&months.every(m=>r.values[m]===0||r.values[m]==null);
 const basisOf=tr=>tr.basis||(['estimated','cumulative'].includes(tr.mode)?'balance':'flow');
 function sizeOf(r,months,basis){
  if(basis==='balance'){for(let i=months.length-1;i>=0;i--){const v=r.values[months[i]];if(Number.isFinite(v))return Math.abs(v);}return Math.abs(r.opening||0);}
@@ -5438,7 +5482,7 @@ function cellTitle(tr,r,m,dim){
 function tagRowHTML(type,g,tr,r,dim,o){
  const months=o.months,pl=type==='monthlyPL',click=Object.hasOwn(V.DIMS,dim);
  const total=pl&&months.every(m=>Number.isFinite(r.values[m]))?months.reduce((a,m)=>a+r.values[m],0):null;
- const flags=[r.estimated?'参考推計':'',r.derived?'期首＋仕訳':'',r.openingFromPrior?'期首は前期末':'',r.journalOnly?'仕訳のみ':'',r.approximate?'概数':''].filter(Boolean).map(f=>`<small class="stmt-flag">${f}</small>`).join('')+(r.jdiff?'<small class="stmt-flag vt-jflag" title="帳票の金額と、読み込んだ仕訳から集計した金額が違う月があります">仕訳との差</small>':'');
+ const flags=[r.estimated?'参考推計':'',r.derived?'期首＋仕訳':'',r.openingFromPrior?'期首は前期末':'',r.journalOnly?'仕訳のみ':'',r.approximate?'概数':'',tr.basis==='movement'&&Number.isFinite(r.held)&&r.held!==0?'累計 '+Number(r.held).toLocaleString('ja-JP')+'円':''].filter(Boolean).map(f=>`<small class="stmt-flag">${f}</small>`).join('')+(r.jdiff?'<small class="stmt-flag vt-jflag" title="帳票の金額と、読み込んだ仕訳から集計した金額が違う月があります">仕訳との差</small>':'');
  const cells=months.map(m=>{const v=r.values[m],jd=Number.isFinite(r.journalDiff?.[m]),title=cellTitle(tr,r,m,dim);
   return `<td class="${v<0?'monthly-negative':''}${jd?' vt-jdiff':''}">${click?cellButton(type,{type,account:g.account,month:m,dim,tag:r.key},v,'',title):`<span class="stmt-num" title="${esc(title)}">${tri(v)}</span>`}</td>`;}).join('');
  return `<tr class="vt-tag${r.missing?' vt-missing':''}${o.inline?' vt-inline':''}"><th class="stmt-acct" title="${esc(r.label)}"><div class="vt-taglabel">${TAG_ICON}<span>${esc(r.label)}</span>${flags}</div></th>${o.showOpening?`<td class="stmt-open">${tr.basis==='movement'?'':tri(r.opening)}</td>`:''}${cells}${pl?`<td class="stmt-total"><span class="stmt-num">${tri(total)}</span></td>`:''}</tr>`;
@@ -5448,6 +5492,8 @@ function tagBlock(type,g,session,result,st,o,dim,inline){
  const tr=V.tagRows(session,result,type,g.account,dim,st.bsMode);if(!tr)return '';
  const months=o.months,did=type+'|'+g.account+'|'+dim,out=[],noun=TAG_LABEL[dim],line=(text,cls='')=>`<tr class="vt-tag vt-note${cls}"><th class="stmt-acct"><div class="vt-taglabel vt-wrap"><span>${text}</span></div></th>${o.blank(o.cols-1)}</tr>`;
  if(tr.mode==='untagged')return line(`${noun}の入力なし<small>（すべて未選択）</small>`,' vt-untagged');
+ // その種類のタグ別の帳票は読込済みで、この科目だけ載っていない（freeeは合計0円の科目を品目別・部門別に出さない）
+ if(inline&&tr.mode==='unknown'&&root.ReviewTagReports?.has(session,type,dim))return line(`${noun}の入力なし<small>（${noun}別の帳票にこの科目がありません）</small>`,' vt-untagged');
  if(inline&&tr.mode==='unknown')return line(type==='monthlyBS'?`${noun}別の残高は資料から確定できません（「内訳の表示」で増減に切り替え）`:'科目の分類が未確定のため、内訳を表示できません');
  if(!inline&&type==='monthlyBS')out.push(`<tr class="vt-tag vt-note"><td colspan="${o.cols}"><div class="notice vt-sticky">${bsNote(tr,dim)} 未読込の金額を0円とは扱いません。</div></td></tr>`);
  else if(inline&&tr.mode==='movement')out.push(line(tr.semantic==='cash'?'累計の動き（相手先ごとの入出金）':'累計の動き（未選択に相殺額あり）',' vt-sem'));
@@ -6370,8 +6416,8 @@ function amountText(it){
 // ---- 確認キューの上：段階表示と「次にやること」
 function steps(b){
  const cur=b.stages.find(s=>s.open)?.no||0;
- return `<ol class="fo-steps">${b.stages.map(s=>{const done=s.total-s.open,pct=s.total?Math.round(done/s.total*100):0,cls=[s.no===cur?'is-current':'',s.total&&!s.open?'is-done':'',!s.total?'is-empty':''].filter(Boolean).join(' ');
-  return `<li><button type="button" class="fo-step ${cls}" data-action="foStage" data-stage="${s.no}" title="${esc(s.purpose)}" aria-label="段階${s.no} ${esc(s.name)}：未対応 ${s.open}件／全 ${s.total}件"${s.no===cur?' aria-current="step"':''}><span class="fo-no">${s.total&&!s.open?'✓':s.no}</span><span class="fo-stepname">${esc(s.name)}</span><span class="fo-count"><strong>${s.open}</strong> / ${s.total}<span class="fo-unit">件</span></span><span class="fo-bar" aria-hidden="true"><span style="width:${pct}%"></span></span></button></li>`;}).join('')}</ol>`;
+ return `<ol class="fo-steps">${b.stages.map(s=>{const done=s.total-s.open-(s.asking||0),pct=s.total?Math.round(done/s.total*100):0,cls=[s.no===cur?'is-current':'',s.total&&!s.open&&!s.asking?'is-done':'',!s.total?'is-empty':''].filter(Boolean).join(' ');
+  return `<li><button type="button" class="fo-step ${cls}" data-action="foStage" data-stage="${s.no}" title="${esc(s.purpose)}" aria-label="段階${s.no} ${esc(s.name)}：未対応 ${s.open}件／全 ${s.total}件"${s.no===cur?' aria-current="step"':''}><span class="fo-no">${s.total&&!s.open&&!s.asking?'✓':s.no}</span><span class="fo-stepname">${esc(s.name)}</span><span class="fo-count"><strong>${s.open}</strong> / ${s.total}<span class="fo-unit">件</span></span><span class="fo-bar" aria-hidden="true"><span style="width:${pct}%"></span></span></button></li>`;}).join('')}</ol>`;
 }
 function nextCard(b){
  const it=b.next;
@@ -6393,8 +6439,8 @@ function exportBox(kind,b,session){
  return `<details class="fo-export" data-fo-export="${kind}"${state.open[kind]?' open':''}><summary>${esc(title)}<span class="fo-exportn">${list.length}件</span></summary><div class="fo-exportbody"><p class="small">${esc(note)}</p><pre class="fo-preview" tabindex="0" aria-label="${esc(title)}の内容">${esc(text)}</pre><div class="fo-exportacts"><button class="btn small" data-action="foCopy" data-kind="${kind}">コピー</button><button class="btn small" data-action="foCsv" data-kind="${kind}">CSVで保存</button><button class="btn small" data-action="foPrint" data-kind="${kind}">印刷</button></div></div></details>`;
 }
 function header(session,result){
- const b=FO.build(session,result),open=b.items.filter(i=>i.status!=='done').length;
- return `<section class="panel fo-order" aria-labelledby="foTitle"><div class="panelhead"><h2 id="foTitle">対応の順番</h2><span class="small">未対応 ${open}件／全 ${b.items.length}件（同じ論点はまとめて数えています）</span></div><div class="fo-orderbody">${steps(b)}${nextCard(b)}${goneNotice(session)}<div class="fo-exports">${exportBox('client',b,session)}${exportBox('office',b,session)}</div></div></section>`;
+ const b=FO.build(session,result),open=b.items.filter(i=>i.status==='open').length,asking=b.items.filter(i=>i.status==='asking').length;
+ return `<section class="panel fo-order" aria-labelledby="foTitle"><div class="panelhead"><h2 id="foTitle">対応の順番</h2><span class="small">未対応 ${open}件${asking?`・お客様へ確認中 ${asking}件`:''}／全 ${b.items.length}件（同じ論点はまとめて数えています）</span></div><div class="fo-orderbody">${steps(b)}${nextCard(b)}${goneNotice(session)}<div class="fo-exports">${exportBox('client',b,session)}${exportBox('office',b,session)}</div></div></section>`;
 }
 function toggle(){return `<button type="button" class="fo-toggle" data-action="foToggle" aria-pressed="${state.ordered}"><span class="fo-switch" aria-hidden="true"></span>順番どおりに並べる</button>`;}
 // 指摘の行に足す札（誰が動くか・関連件数）
@@ -6452,7 +6498,7 @@ function print(kind,session,result,opt={}){
 function panel(session,result){
  const b=FO.build(session,result),cur=b.stages.find(s=>s.open)?.no||0;
  const next=b.items.filter(i=>i.status==='open').slice(0,3);
- const counts=`<ol class="fo-mini">${b.stages.map(s=>`<li class="${s.no===cur?'is-current':''}${s.total&&!s.open?' is-done':''}"><span class="fo-no">${s.no}</span><span class="fo-mininame">${esc(s.name)}</span><span class="fo-minicount"><strong>${s.open}</strong>/${s.total}</span></li>`).join('')}</ol>`;
+ const counts=`<ol class="fo-mini">${b.stages.map(s=>`<li class="${s.no===cur?'is-current':''}${s.total&&!s.open&&!s.asking?' is-done':''}"><span class="fo-no">${s.no}</span><span class="fo-mininame">${esc(s.name)}</span><span class="fo-minicount"><strong>${s.open}</strong>/${s.total}</span></li>`).join('')}</ol>`;
  const rows=next.map((it,i)=>{const label=`${it.account&&!String(it.title).startsWith(it.account)?it.account+'：':''}${it.title}`,amt=amountText(it);
   const attr=it.materials?'data-view="data"':`data-month-finding="${esc(it.lead.id)}"`;
   return `<button class="fo-nextrow" ${attr}><span class="fo-nextno">${i+1}</span><span class="fo-nextmain"><span class="fo-nextmeta"><span class="fo-stagechip">段階${it.stage}</span>${actorBadge(it.actor)}</span><strong>${esc(label)}</strong>${amt?`<span class="small">${esc(amt)}</span>`:''}</span></button>`;}).join('');
@@ -7095,6 +7141,8 @@ function bindReview(){
  bindSettings();
  $('#search').addEventListener('input',e=>{search=e.target.value;$('#findingList').innerHTML=queueList(queueRows());});
 }
+// 指摘を選んだら、その解説（右側・スマホでは下）が見える位置まで移る。上の固定メニューの分だけ余白をとる
+function revealSelected(){const panel=$('#teacherPanel');if(!panel)return;const top=panel.getBoundingClientRect().top;if(top>=70&&top<innerHeight*.5)return;window.scrollTo({top:Math.max(0,top+scrollY-80),behavior:M.prefersReduced()?'auto':'smooth'});}
 function bindDropzone(){const z=$('#dropzone');z.addEventListener('dragover',e=>{e.preventDefault();z.classList.add('drag');});z.addEventListener('dragleave',()=>z.classList.remove('drag'));z.addEventListener('drop',e=>{e.preventDefault();z.classList.remove('drag');forceType=null;queueFiles([...e.dataTransfer.files]);});z.addEventListener('keydown',e=>{if(e.target!==z)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();chooseFiles(null);}});}
 function chooseFiles(type){const c=W.current(workspace);if(!c)return toast('会社一覧で対象の会社を選んでください');if(!c.entityType){showCompanyDialog(c.id);return toast('読込前に個人／法人の区分を設定してください');}forceType=type||null;importCompanyId=c.id;$('#fileInput').value='';$('#fileInput').click();}
 async function queueFiles(list){const c=W.current(workspace);if(!c)return toast('会社を選んでから資料を読み込んでください');if(!c.entityType)return toast('先に個人／法人の区分を設定してください');importCompanyId=c.id;files=list.filter(f=>/\.(csv|tsv|txt)$/i.test(f.name));if(!files.length)return toast('CSV・TSV・テキスト形式を選んでください');if(files.length>12){files=[];return toast('一度に選ぶファイルは12個以内にしてください');}queueTotal=files.length;queueStart(files.length);await nextFile();}
@@ -7202,8 +7250,9 @@ async function commitImport(){
  const duplicate=session.imports.some(i=>i.type===p.type&&i.fingerprint===p.fingerprint);
  if(duplicate&&p.mode==='append')return toast('同じファイルは読込済みです。重複追加を止めました');
  const T=window.ReviewTagReports,datasetItems=E.reportType(p.type)?p.preview.items.filter(r=>T.inDataset(p.type,r)):p.preview.items;
- if(datasetItems.length+(p.mode==='append'?session.datasets[p.type].length:0)>100000)return toast('資料1種類につき10万行以内にしてください');
- if(E.reportType(p.type)&&p.preview.items.length-datasetItems.length+(session.tagReports||[]).length>300000)return toast('タグ別の帳票は合わせて30万行以内にしてください');
+ // 帳票は置き換えで残る行も含めて、取り込んだ後の行数で上限を確かめる（上限を超えて保存すると次回読めなくなる）
+ if(E.reportType(p.type)){const z=T.preview(session,p.type,p.preview.items,{importSource:'preview',mode:p.mode});if(z.dataset>100000)return toast('資料1種類につき10万行以内にしてください（取り込むと '+z.dataset.toLocaleString()+'行）');if(z.tagReports>300000)return toast('タグ別の帳票は合わせて30万行以内にしてください（取り込むと '+z.tagReports.toLocaleString()+'行）');}
+ else if(datasetItems.length+(p.mode==='append'?session.datasets[p.type].length:0)>100000)return toast('資料1種類につき10万行以内にしてください');
  if(p.mode==='append'&&!session.demo&&(p.type==='current'||p.type==='prior')){
    const ids=new Set(session.datasets[p.type].filter(r=>r.hasId).map(r=>r.date+'|'+r.id));
    if(p.preview.items.some(r=>r.hasId&&ids.has(r.date+'|'+r.id)))return toast('同じ日付・仕訳番号の資料が重なっています。「置き換える」か、重ならない期間のCSVを選んでください');
@@ -7219,7 +7268,7 @@ async function commitImport(){
  const record={type:p.type,name:p.file.name,importSource,count:normalized.length,errors:p.preview.errors.length,encoding:p.encoding,fingerprint:p.fingerprint,at:new Date().toISOString(),minDate:importedDates[0]||null,maxDate:importedDates.at(-1)||null,months:Object.keys(monthCounts).sort(),monthCounts,...(reportStats?{reportStats,sourcePeriod:reportStats.sourcePeriod,entity:reportStats.entity}:{}),...(p.preview.journalStats?{journalStats:{...p.preview.journalStats}}:{})};
  if(E.reportType(p.type))T.apply(session,p.type,normalized,{importSource,mode:p.mode,record});
  else{if(p.mode==='replace'){session.datasets[p.type]=normalized;session.imports=session.imports.filter(i=>i.type!==p.type);}else session.datasets[p.type]=session.datasets[p.type].concat(normalized);session.imports.push(record);}
- if(p.type==='current')session.project.complete=false;if(p.type==='aging'){session.financial.agingComplete=false;session.financial.agingAsOf='';}monthlyFocus=null;contextOffset=0;session.demo=false;invalidateChecks();
+ if(p.type==='current'){session.project.complete=false;const pc=W.current(workspace);if(pc&&pc.session===session&&periodIsAuto(session))applyAutoPeriod(pc);}if(p.type==='aging'){session.financial.agingComplete=false;session.financial.agingAsOf='';}monthlyFocus=null;contextOffset=0;session.demo=false;invalidateChecks();
  $('#importDialog').close();recompute();save();render();toast(`${E.TYPES[p.type].name}を読み込みました${p.preview.errors.length?`（${p.preview.errors.length}行を除外）`:''}`);
  if(KH&&['current','prior'].includes(p.type)&&p.shareKubun!==false){const shareCo=W.current(workspace),label=E.TYPES[p.type].name,file=p.file,opt={prefix:KUBUN_PREFIX[p.type],replace:p.mode==='replace'};file.arrayBuffer().then(buffer=>kubunShareJournals([{name:file.name,buffer}],shareCo,opt)).then(r=>toast(`${label}を読み込みました${r&&r.read?'（消費税区分チェックにも追加）':'（消費税区分チェックでは読めない形式のため追加なし）'}`)).catch(err=>toast('消費税区分チェックへの追加はできませんでした：'+err.message));}
  await nextFile();
@@ -7232,7 +7281,7 @@ function askTeacher(question){
  session.teacher.turns.push(a);session.teacher.turns=session.teacher.turns.slice(-20);if(context)selected=context;view='teacher';save();render();
 }
 function teacherText(){return session.teacher.turns.map(a=>`${a.stale?'【資料更新後：再確認が必要】\n':''}質問：${a.question}\n${a.title}\n${a.paragraphs.join('\n')}\n${a.steps.join('\n')}\n${a.references.join('\n\n')}\n${a.scope}`).join('\n\n────────\n\n');}
-document.addEventListener('click',async e=>{const el=e.target.closest('button');if(!el)return;if(loading)return toast('保存データの読込が終わるまでお待ちください');if(el.dataset.view){navigate(el.dataset.view);return;}if(el.dataset.companyFilter){companyFilter=el.dataset.companyFilter;$('#companyRows').innerHTML=P.companyRows(workspace,companySearch,companyFilter);render();return;}if(el.dataset.openCompany){openCompany(el.dataset.openCompany);return;}if(el.dataset.editCompany){showCompanyDialog(el.dataset.editCompany);return;}if(el.dataset.unarchiveCompany){W.archive(workspace,el.dataset.unarchiveCompany,false);save();render();return;}if(el.dataset.archiveCompany){const c=workspace.companies.find(c=>c.id===el.dataset.archiveCompany);if(!c)return;syncActive();W.archive(workspace,c.id,!c.archived);$('#companyDialog').close();session=W.current(workspace)?.session||E.newSession();recompute();view='companies';save();render();return;}if(el.dataset.monthFinding){selected=el.dataset.monthFinding;view='review';filter='all';search='';render();return;}if(el.dataset.monthAccount){monthlyFocus={account:el.dataset.monthAccount,month:el.dataset.monthPeriod};render();return;}if(el.dataset.action==='closeMonthlyDrill'){monthlyFocus=null;render();return;}if(el.dataset.filter){filter=el.dataset.filter;render();return;}if(el.dataset.finding){selected=el.dataset.finding;render();if(innerWidth<960)$('#teacherPanel').scrollIntoView({behavior:M.prefersReduced()?'auto':'smooth'});return;}const a=el.dataset.action;
+document.addEventListener('click',async e=>{const el=e.target.closest('button');if(!el)return;if(loading)return toast('保存データの読込が終わるまでお待ちください');if(el.dataset.view){navigate(el.dataset.view);return;}if(el.dataset.companyFilter){companyFilter=el.dataset.companyFilter;$('#companyRows').innerHTML=P.companyRows(workspace,companySearch,companyFilter);render();return;}if(el.dataset.openCompany){openCompany(el.dataset.openCompany);return;}if(el.dataset.editCompany){showCompanyDialog(el.dataset.editCompany);return;}if(el.dataset.unarchiveCompany){W.archive(workspace,el.dataset.unarchiveCompany,false);save();render();return;}if(el.dataset.archiveCompany){const c=workspace.companies.find(c=>c.id===el.dataset.archiveCompany);if(!c)return;syncActive();W.archive(workspace,c.id,!c.archived);$('#companyDialog').close();session=W.current(workspace)?.session||E.newSession();recompute();view='companies';save();render();return;}if(el.dataset.monthFinding){selected=el.dataset.monthFinding;view='review';filter='all';search='';render();revealSelected();return;}if(el.dataset.monthAccount){monthlyFocus={account:el.dataset.monthAccount,month:el.dataset.monthPeriod};render();return;}if(el.dataset.action==='closeMonthlyDrill'){monthlyFocus=null;render();return;}if(el.dataset.filter){filter=el.dataset.filter;render();return;}if(el.dataset.finding){selected=el.dataset.finding;render();revealSelected();return;}const a=el.dataset.action;
  if(a==='kubunOpen'){const c=W.current(workspace);if(c&&KH){KH.openedFor=null;KH.open(c).then(updateKubunBar).catch(err=>toast('消費税区分を開けません：'+err.message));}return;}
  if(a==='kubunHome'){if(KH)KH.home().catch(err=>toast(err.message));return;}
  if(a==='kubunPeriod'){if(KH)KH.setPeriod(session.project.start,session.project.end).then(ok=>{toast(ok?'区分チェックの対象期間をレビューに合わせました':'区分チェックのCSVにその期間の月がありません。CSVの期間を確認してください');updateKubunBar();}).catch(err=>toast(err.message));return;}
@@ -7287,7 +7336,7 @@ document.addEventListener('change',e=>{
  if(e.target.id==='headerIndex'){pending.headerIndex=+e.target.value;pending.mapping=E.importMapping(pending.rows,pending.type,pending.headerIndex,session.project);pending.skip=false;showImport();}
  if(e.target.id==='encoding'){pending.encoding=e.target.value;try{pending.rows=E.parseCSV(new TextDecoder(pending.encoding).decode(pending.bytes));pending.headerIndex=E.headerRow(pending.rows,pending.type,session.project);pending.mapping=E.importMapping(pending.rows,pending.type,pending.headerIndex,session.project);showImport();}catch(err){toast(err.message);}}
  if(e.target.dataset.map){pending.mapping[e.target.dataset.map]=+e.target.value;showImport();}
- if(e.target.id==='skipErrors'){pending.skip=e.target.checked;showImport();}if(e.target.id==='importMode')pending.mode=e.target.value;
+ if(e.target.id==='skipErrors'){pending.skip=e.target.checked;showImport();}if(e.target.id==='importMode'){pending.mode=e.target.value;showImport();}
  if(e.target.id==='historySameClient')pending.scopeAcknowledged=e.target.checked;
  if(e.target.id==='historyImportStatus')pending.historyStatus=e.target.value;
  if(pending&&['importType','headerIndex','encoding','skipErrors','importMode','historySameClient','historyImportStatus'].includes(e.target.id)||pending&&e.target.dataset.map)decorateHistoryImport();

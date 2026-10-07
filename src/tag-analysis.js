@@ -50,7 +50,7 @@ function context(session,model){
 }
 function evidence(ctx,type,dim,account,tag,month,amount){
  const r=ctx.raw(type,dim,account,tag,month);
- return {date:month,statement:E.reportType(type)==='monthlyPL'?'PL':'BS',account:`${account}（${DIMS[dim]||dim}：${tag}）`,amount:finite(r?.amount)?r.amount:amount,source:r?.source||ctx.files.get(r?.importSource)||'',line:Number.isInteger(r?.line)?r.line:'—',tagDimension:dim,tagValue:tag,importSource:r?.importSource||''};
+ return {date:month,statement:E.reportType(type)==='monthlyPL'?'PL':'BS',account:`${account}（${DIMS[dim]||dim}：${tag}）`,amount:finite(r?.amount)?r.amount:amount,source:(E.TYPES[type]?.name||type)+'（'+(DIMS[dim]||dim)+'別）',line:Number.isInteger(r?.line)?r.line:'—',tagDimension:dim,tagValue:tag,importSource:''};
 }
 
 // ---- PL：タグ別の収益・費用の構成
@@ -198,7 +198,7 @@ function checks(session){
   const expected=i.reportStats?.tagRows;if(!i.importSource||!finite(expected)||expected<=0)continue;
   const src=dim==='party'&&E.reportType(i.type)==='monthlyBS'?(session.datasets?.[i.type]||[]).filter(r=>r.tagDimension==='party'):(session.tagReports||[]).filter(r=>r.type===i.type&&r.tagDimension===dim);
   if(src.length&&!src.some(r=>r.importSource))continue;
-  const mine=src.filter(r=>r.importSource===i.importSource);
+  const own=new Set([i.importSource,...(Array.isArray(i.reusedSources)?i.reusedSources:[])]),mine=src.filter(r=>own.has(r.importSource));
   if(mine.length<expected){
    const present=new Set(mine.map(r=>key(r.account))),before=[...new Set((i.reportStats.detailReportedTotals||[]).map(x=>x.account))].filter(a=>!present.has(key(a)));
    conflict.push({kind:'removed',type:i.type,dim,label:DIMS[dim]||dim,file:i.name||'',importSource:i.importSource,removed:expected-mine.length,kept:mine.length,accounts:before});

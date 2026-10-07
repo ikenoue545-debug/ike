@@ -66,7 +66,7 @@ test('8つの帳票：BSの見方（残高・累計の動き・タグなし・�
  const f=fs_[0];assert.equal(f.account,'広告宣伝費');assert.equal(f.amount,366220);assert.equal(f.level,'info','部門の未選択は共通費のこともあるので参考');
  assert.equal(f.monthlyCheck,true);assert.deepEqual(plain(f.sources),['monthly','freee']);
  assert.deepEqual(plain(JSON.parse(f.reviewContext)),['tag-report','tag-unselected','monthlyPL','department','広告宣伝費','未選択']);
- assert.equal(f.rows.length,1);assert.equal(f.rows[0].statement,'PL');assert.equal(f.rows[0].source,'pl-department-2026.csv');assert.ok(Number.isInteger(f.rows[0].line));
+ assert.equal(f.rows.length,1);assert.equal(f.rows[0].statement,'PL');assert.equal(f.rows[0].source,'月次PL（単月）（部門別）','根拠は帳票名（ファイル名を変えて読み直しても確認結果のIDが変わらない）');assert.ok(Number.isInteger(f.rows[0].line));
  // 同じ資料なら同じID（確認結果が引き継がれる）
  assert.equal(tagFindings(E.analyze(s))[0].id,f.id);
  assert.equal(ta.checks.mismatch.length,0);assert.equal(ta.checks.conflict.length,0);
@@ -101,7 +101,7 @@ test('精算科目：タグごとに動かずに残る立替金（科目の残�
  assert.deepEqual(plain(a.static.map(x=>[x.tag,x.amount,x.since,x.months])),[['Web制作部',-250000,'2026-01',8],['デザイン部',20000,'期首',9]]);
  const f=tagFindings(r).find(f=>kindOf(f)==='tag-clearing');
  assert.ok(f);assert.equal(f.level,'candidate');assert.equal(f.amount,270000);assert.match(f.title,/立替金：部門ごとに見ると、精算されずに残っている金額があります（2件）/);
- assert.match(f.reason,/未選択の金額（230,000円）と相殺/);assert.equal(f.rows.length,2);assert.equal(f.rows[0].source,'bs-department-tatekae.csv');
+ assert.match(f.reason,/未選択の金額（230,000円）と相殺/);assert.equal(f.rows.length,2);assert.equal(f.rows[0].source,'月次BS（月末残高）（部門別）');
  assert.deepEqual(plain(JSON.parse(f.reviewContext)),['tag-report','tag-clearing','monthlyBS','department','立替金','']);
 });
 

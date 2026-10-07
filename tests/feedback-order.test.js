@@ -102,7 +102,7 @@ test('状態：確認中（ask）を含む項目は確認中、すべて確認�
  assert.equal(first.stage,b.items.find(i=>i.status==='open').stage);
  s.decisions[first.findings[0].id]={status:'ask',note:'お客様に依頼済み'};
  const b2=FO.build(s,r);assert.equal(b2.byId.get(first.findings[0].id).status,'asking');assert.notEqual(b2.next.topic,first.topic);
- assert.ok(b2.stages[first.stage-1].open>=1,'確認中は未完了として数える');
+ assert.ok(b2.stages[first.stage-1].asking>=1,'確認中は未対応とは別に数える（未完了）');
  const it=b2.items.find(i=>i.findings.length>1);for(const f of it.findings)s.decisions[f.id]={status:'defer',note:''};
  assert.equal(FO.build(s,r).byId.get(it.findings[0].id).status,'done');
 });

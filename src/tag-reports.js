@@ -21,38 +21,55 @@ function slotOf(i){
 function compact(type,r,importSource){
  return {type,tagDimension:r.tagDimension,tagValue:r.tagValue,account:r.account,...(r.accountCode?{accountCode:r.accountCode}:{}),...(r.category?{category:r.category}:{}),...(r.role?{role:r.role}:{}),date:r.date,amount:r.amount,unit:r.unit,...(r.opening?{opening:true}:{}),...(Number.isInteger(r.line)?{line:r.line}:{}),importSource};
 }
-function cellKey(r){return key(r.account)+'\u0001'+r.date;}
+// 帳票のセル：科目・年月・期首かどうか。置き換えは新しい帳票が含むセル（年月・期首）だけにとどめる。
+const cov=r=>r.date+(r.opening?'#期首':'');
+function cellKey(r){return key(r.account)+'\u0001'+cov(r);}
+// 千円の帳票は千円未満を切り捨てるため、円の値との差が1,000円未満なら同じ値とみなす
+function sameAmount(a,b){
+ if(!Number.isSafeInteger(a.amount)||!Number.isSafeInteger(b.amount))return a.amount===b.amount;
+ if(a.unit===b.unit)return a.amount===b.amount;
+ return Math.abs(a.amount-b.amount)<1000;
+}
 // 取り込む前に、読込済みの帳票との関係を調べる（ダイアログの注意と、確定時の処理で同じ結果を使う）
 function plan(session,type,items,{importSource='',mode='replace'}={}){
  const dim=items.find(r=>r.tagDimension)?.tagDimension||'';
  const old=session.datasets?.[type]||[],oldTags=(session.tagReports||[]);
  const newParents=items.filter(r=>!r.tagDimension),newDetail=items.filter(r=>r.tagDimension);
+ const covered=new Set(items.map(cov)),inside=r=>covered.has(cov(r));
  const newAccounts=new Set(newParents.map(r=>key(r.account))),newCells=new Map(newParents.map(r=>[cellKey(r),r]));
- const oldParents=old.filter(r=>!r.tagDimension);
- // 科目合計の食い違い（同じ科目・同じ月で金額が違う）
+ const oldParents=old.filter(r=>!r.tagDimension&&inside(r));
+ // 科目合計の食い違い（同じ科目・同じ月で金額が違う。円と千円の端数差は除く）
  const conflicts=[];
- for(const r of oldParents){const n=newCells.get(cellKey(r));if(n&&Number.isSafeInteger(r.amount)&&Number.isSafeInteger(n.amount)&&r.amount!==n.amount)conflicts.push({account:r.account,date:r.date,old:r.amount,new:n.amount,source:r.source||''});}
+ for(const r of oldParents){const n=newCells.get(cellKey(r));if(n&&!sameAmount(r,n))conflicts.push({account:r.account,date:r.date,...(r.opening?{opening:true}:{}),old:r.amount,new:n.amount,source:r.source||''});}
  const conflictAccounts=new Set(conflicts.map(c=>key(c.account)));
- // 新しい帳票にない科目：すべて0円なら残す（品目別・部門別は合計0の科目を省くため）。0円でなければ外して知らせる
+ // 新しい帳票にない科目（同じ月の分）：すべて0円なら残す（品目別・部門別は合計0の科目を省くため）。0円でなければ外して知らせる
  const absent=new Map();for(const r of oldParents){const k=key(r.account);if(newAccounts.has(k))continue;const g=absent.get(k)||{account:r.account,zero:true};if(Number.isSafeInteger(r.amount)&&r.amount!==0)g.zero=false;absent.set(k,g);}
  const droppedAccounts=[...absent.values()].filter(g=>!g.zero).map(g=>g.account),droppedKeys=new Set(droppedAccounts.map(key));
- // 置き換えで外れる他のタグ別の内訳：科目合計が食い違う科目・外れる科目の分
- const staleKey=r=>conflictAccounts.has(key(r.account))||droppedKeys.has(key(r.account));
+ // 置き換えで外れる他のタグ別の内訳：科目合計が食い違う科目・外れる科目の、同じ月の分
+ const staleKey=r=>inside(r)&&(conflictAccounts.has(key(r.account))||droppedKeys.has(key(r.account)));
  const otherDims=new Map();
  const noteStale=(d,r)=>{if(!staleKey(r))return;const g=otherDims.get(d)||new Set();g.add(r.account);otherDims.set(d,g);};
  for(const r of old)if(r.tagDimension&&r.tagDimension!==dim)noteStale(r.tagDimension,r);
  for(const r of oldTags)if(r.type===type&&r.tagDimension!==dim)noteStale(r.tagDimension,r);
  const stale=[...otherDims].map(([d,set])=>({dim:d,label:DIMS[d]||d,accounts:[...set]}));
  const overlap=mode==='append'?appendOverlap(session,type,items):0;
- return {type,dim,mode,parents:newParents.length,details:newDetail.length,detailAccounts:new Set(newDetail.map(r=>key(r.account))).size,conflicts,droppedAccounts,stale,overlap,importSource};
+ // 新しい帳票の期間の外にある読込済みの行は残る（別の年度・期首など）
+ const outside=old.filter(r=>!r.tagDimension&&!inside(r)).length;
+ return {type,dim,mode,parents:newParents.length,details:newDetail.length,detailAccounts:new Set(newDetail.map(r=>key(r.account))).size,conflicts,droppedAccounts,stale,overlap,outside,months:[...covered].sort(),importSource};
 }
 function appendOverlap(session,type,items){
- const k=r=>JSON.stringify([r.date,key(r.account),r.tagDimension||'',key(r.tagValue)]);
+ const k=r=>JSON.stringify([cov(r),key(r.account),r.tagDimension||'',key(r.tagValue)]);
  const keys=new Set([...(session.datasets?.[type]||[]),...(session.tagReports||[]).filter(r=>r.type===type)].map(k));
  return items.filter(r=>keys.has(k(r))).length;
 }
+// 確定後の行数（上限の確認用）。session は変えない。
+function preview(session,type,items,opt={}){
+ const copy={datasets:{...session.datasets,[type]:(session.datasets?.[type]||[]).slice()},tagReports:(session.tagReports||[]).slice(),imports:(session.imports||[]).slice()};
+ apply(copy,type,items,opt);
+ return {dataset:copy.datasets[type].length,tagReports:copy.tagReports.length};
+}
 // 確定：session を書き換える（datasets[type] と tagReports と imports の該当の枠）
-function apply(session,type,items,{importSource,mode='replace',record}){
+function apply(session,type,items,{importSource,mode='replace',record}={}){
  const p=plan(session,type,items,{importSource,mode}),dim=p.dim;
  const datasetRows=items.filter(r=>inDataset(type,r)),tagRows=items.filter(r=>!inDataset(type,r)).map(r=>compact(type,r,importSource));
  if(!Array.isArray(session.tagReports))session.tagReports=[];
@@ -60,36 +77,55 @@ function apply(session,type,items,{importSource,mode='replace',record}){
   session.datasets[type]=session.datasets[type].concat(datasetRows);
   if(tagRows.length)session.tagReports=session.tagReports.concat(tagRows);
  }else{
+  const covered=new Set(items.map(cov)),inside=r=>covered.has(cov(r));
   const conflictKeys=new Set(p.conflicts.map(c=>key(c.account))),dropKeys=new Set(p.droppedAccounts.map(key)),newAccounts=new Set(items.filter(r=>!r.tagDimension).map(r=>key(r.account)));
-  const stale=r=>conflictKeys.has(key(r.account))||dropKeys.has(key(r.account));
-  const keep=session.datasets[type].filter(r=>{
+  const stale=r=>inside(r)&&(conflictKeys.has(key(r.account))||dropKeys.has(key(r.account)));
+  const old=session.datasets[type];
+  const keep=old.filter(r=>{
+   if(!inside(r))return true;
    if(!r.tagDimension)return !newAccounts.has(key(r.account))&&!dropKeys.has(key(r.account));
    if(r.tagDimension===dim)return false;
    return !stale(r);
   });
-  session.datasets[type]=ordered(session.datasets[type],keep,reuse(session.datasets[type],datasetRows));
-  session.tagReports=session.tagReports.filter(r=>r.type!==type||r.tagDimension!==dim&&!stale(r)).concat(tagRows);
-  session.imports=(session.imports||[]).filter(i=>i.type!==type||slotOf(i)!==dim);
+  const freshRows=reuse(old.filter(inside),datasetRows),oldSame=session.tagReports.filter(r=>r.type===type&&r.tagDimension===dim&&inside(r)),freshTags=reuseTags(oldSame,tagRows);
+  session.datasets[type]=ordered(old,keep,freshRows);
+  session.tagReports=session.tagReports.filter(r=>r.type!==type||!inside(r)||r.tagDimension!==dim&&!stale(r)).concat(freshTags);
+  // 同じ値の内訳は読込済みの行を残すので、その読込元もこの読込の分として記録する
+  const adopted=[...new Set([...freshRows.filter(r=>r.tagDimension),...freshTags].map(r=>r.importSource).filter(x=>x&&x!==importSource))];
+  if(record&&adopted.length)record={...record,reusedSources:adopted};
+  // 同じ枠の読込履歴は、新しい帳票の期間にすべて含まれるものだけ外す（別の年度の履歴は残す）
+  const months=i=>[...(i.reportStats?.months||i.months||[]),...(i.reportStats?.openingMonth?[i.reportStats.openingMonth+'#期首']:[])];
+  session.imports=(session.imports||[]).filter(i=>i.type!==type||slotOf(i)!==dim||!months(i).length||months(i).some(m=>!covered.has(m)));
  }
  if(record)session.imports.push({...record,tagDimension:dim});
  return p;
 }
-// 科目合計がすべての月で読込済みと同じ科目は、読込済みの行をそのまま使う。
-// 確認結果のIDは科目合計の行（ファイル名・行番号を含む）から作るため、別のタグの帳票を足しただけでIDを変えない。
+// 読込済みと同じ値の科目は、読込済みの行をそのまま使う（確認結果のIDは行のファイル名・行番号から作るため、
+// 別のタグの帳票を足しただけ・同じCSVを別名で読み直しただけでIDを変えない）。円の値は千円の値で上書きしない。
 function reuse(old,fresh){
- const group=rows=>{const m=new Map();for(const r of rows){if(r.tagDimension)continue;const k=key(r.account);if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;};
- const cell=r=>[r.date,r.opening?1:0,r.amount,r.unit].join('|'),before=group(old),same=new Set();
- for(const [k,b] of group(fresh)){const a=before.get(k),s=new Set((a||[]).map(cell));if(a&&a.length===b.length&&s.size===a.length&&b.every(r=>s.has(cell(r))))same.add(k);}
+ const group=rows=>{const m=new Map();for(const r of rows){const k=key(r.account)+'\u0001'+(r.tagDimension?r.tagDimension+'\u0001'+key(r.tagValue):'');if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;};
+ const before=group(old),same=new Set();
+ for(const [k,b] of group(fresh)){
+  const a=before.get(k);if(!a||a.length!==b.length)continue;
+  const byCell=new Map(a.map(r=>[cov(r),r]));
+  if(byCell.size===a.length&&b.every(r=>{const o=byCell.get(cov(r));return o&&sameAmount(o,r)&&(o.unit===r.unit||o.unit===1);}))same.add(k);
+ }
  if(!same.size)return fresh;
  const done=new Set();
- return fresh.flatMap(r=>{const k=key(r.account);if(r.tagDimension||!same.has(k))return [r];if(done.has(k))return [];done.add(k);return before.get(k);});
+ return fresh.flatMap(r=>{const k=key(r.account)+'\u0001'+(r.tagDimension?r.tagDimension+'\u0001'+key(r.tagValue):'');if(!same.has(k))return [r];if(done.has(k))return [];done.add(k);return before.get(k);});
+}
+function reuseTags(old,fresh){
+ if(!old.length)return fresh;
+ const id=r=>[key(r.account),key(r.tagValue),cov(r),r.amount,r.unit].join('\u0001'),map=new Map(old.map(r=>[id(r),r]));
+ return fresh.map(r=>map.get(id(r))||r);
 }
 // 科目の並びは新しい帳票の順。新しい帳票にない科目は、前の帳票で直前にあった科目の後ろに置く。
 // 科目ごとに合計の行を先、タグの行を後にする（科目の並びは最初に出た行で決まるため）。
 function ordered(old,keep,fresh){
  const order=[],seen=new Set(),push=k=>{if(!seen.has(k)){seen.add(k);order.push(k);}};
  for(const r of fresh)push(key(r.account));
- let prev=null;for(const r of old){const k=key(r.account);if(!seen.has(k)&&keep.some(x=>key(x.account)===k)){const at=prev===null?0:order.indexOf(prev)+1;order.splice(at,0,k);seen.add(k);}if(seen.has(k))prev=k;}
+ const keepKeys=new Set(keep.map(x=>key(x.account)));
+ let prev=null;for(const r of old){const k=key(r.account);if(!seen.has(k)&&keepKeys.has(k)){const at=prev===null?0:order.indexOf(prev)+1;order.splice(at,0,k);seen.add(k);}if(seen.has(k))prev=k;}
  for(const r of keep)push(key(r.account));
  const by=new Map(order.map(k=>[k,{parents:[],tags:[]}]));
  for(const r of [...fresh,...keep])by.get(key(r.account))[r.tagDimension?'tags':'parents'].push(r);
@@ -116,5 +152,5 @@ function rows(session,type,dim,account){
  return [...by.values()];
 }
 function has(session,type,dim){return dim==='party'&&isBS(type)?(session.datasets?.[type]||[]).some(r=>r.tagDimension==='party'):(session.tagReports||[]).some(r=>r.type===type&&r.tagDimension===dim);}
-root.ReviewTagReports={DIMS,REPORT_TYPES,slotOf,plan,apply,materials,rows,has,inDataset};
+root.ReviewTagReports={DIMS,REPORT_TYPES,slotOf,plan,apply,preview,materials,rows,has,inDataset};
 })(typeof window!=='undefined'?window:globalThis);

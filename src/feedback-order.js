@@ -44,7 +44,9 @@ function stageOf(f){
  if(f.materials)return 1;
  const kind=tagKind(f),text=String(f.title||'')+' '+String(f.reason||''),c=ctx(f);
  if(f.integrityCheck||f.check==='sync'||kind==='tag-mismatch'||kind==='tag-conflict')return 1;
- if(f.check==='monthly'&&/帳票と仕訳|帳票との照合|読込|読取|未読込|照合できません/.test(text))return 1;
+ // 回収・支払（取引先別の動きなし・停滞など）は段階3。「読込済み9か月」などの語で段階1にしない
+ if(f.check==='monthly'&&prefixed(f,'settlement')!=null)return 3;
+ if(f.check==='monthly'&&/帳票と仕訳|帳票との照合|未読込|読込範囲|読み込まれて|読取エラー|照合できません/.test(text))return 1;
  if(f.check!=='unreg'&&f.dataReview&&f.level==='info')return 1;
  if(f.level==='difference'||f.balanceCheck||S2.has(f.check)||c[0]==='continuity')return 2;
  if(f.check==='monthly'&&/マイナス/.test(f.title||'')&&/現金|預金|借入|リース債務/.test(accountOf(f)))return 2;
@@ -62,7 +64,8 @@ function actorOf(f){
  if(!f)return 'note';
  if(f.materials)return 'request';
  const st=stageOf(f),kind=tagKind(f),text=String(f.title||'')+' '+String(f.reason||'');
- if(st===1)return MISSING.test(text)&&!/読取エラー|重複/.test(f.title||'')?'request':'office';
+ // 資金・照合の条件の確認（網羅性・期首のつながり）は事務所で確認する。お客様に送るのは、名前の分かる資料が足りないときだけ
+ if(st===1)return !f.treasuryCheck&&!f.integrityCheck&&MISSING.test(text)&&!/読取エラー|重複/.test(f.title||'')?'request':'office';
  if(st===2)return 'office';
  if(kind==='tag-clearing')return 'fix';
  if(st===6)return kind||f.level!=='info'?'fix':'note';
@@ -103,7 +106,7 @@ function partOf(f){
 // 同じ論点の鍵。行の署名や設定値を含めないので、設定を変えて再分析しても変わらない
 function topicKey(f){
  if(f?.materials)return '1|materials|'+f.materials;
- return [stageOf(f),family(f),nkey(accountOf(f)),partOf(f)].join('|');
+ return [stageOf(f),family(f),nkey(shownAccount(f)),partOf(f)].join('|');
 }
 function partyLabel(f){
  const c=ctx(f);if(c[0]==='tag-report')return c[5]&&c[5]!=='未選択'?String(c[5]):'';
@@ -171,7 +174,7 @@ function build(session,result){
   const p=prev.get(d.topic);if(!p||String(d.at||'')>=String(p.at||''))prev.set(d.topic,{id,status:d.status,note:String(d.note||''),label:d.reviewLabel||'',period:d.reviewPeriod||'',at:d.at||''});
  }
  for(const it of items){const p=prev.get(it.topic);if(p&&it.findings.some(f=>(dec[f.id]?.status||'open')==='open'))it.carried=p;}
- const stages=STAGES.map(s=>{const xs=items.filter(i=>i.stage===s.no);return {...s,items:xs,open:xs.filter(i=>i.status!=='done').length,total:xs.length};});
+ const stages=STAGES.map(s=>{const xs=items.filter(i=>i.stage===s.no);return {...s,items:xs,open:xs.filter(i=>i.status==='open').length,asking:xs.filter(i=>i.status==='asking').length,total:xs.length};});
  const next=items.find(i=>i.status==='open')||items.find(i=>i.status==='asking')||null;
  const byId=new Map();for(const it of items)for(const f of it.findings)byId.set(f.id,it);
  const clientList=items.filter(i=>(i.actor==='ask'||i.actor==='fix'||i.actor==='request')&&i.status!=='done').map(i=>entry(i,session));
@@ -221,7 +224,7 @@ function clientText(list,meta={}){
 }
 function officeText(list,meta={}){
  const head=['事務所の作業リスト',[meta.name,meta.period].filter(Boolean).join('　')].filter(Boolean);
- const body=(list||[]).map((x,i)=>`${i+1}. [${x.stage} ${x.stageName}] ${x.account?x.account+(x.party?'（'+x.party+'）':'')+'：':''}${x.title}${x.amount?'（'+x.amountLabel+'）':''}${x.monthLabel?' '+x.monthLabel:''}${x.count>1?' 関連'+x.count+'件':''}${x.step?'\n   次に確認すること：'+x.step:''}`);
+ const body=(list||[]).map((x,i)=>`${i+1}. [${x.stage} ${x.stageName}] ${x.account&&!String(x.title).startsWith(x.account)?x.account+(x.party?'（'+x.party+'）':'')+'：':''}${x.title}${x.amount?'（'+x.amountLabel+'）':''}${x.monthLabel?' '+x.monthLabel:''}${x.count>1?' 関連'+x.count+'件':''}${x.step?'\n   次に確認すること：'+x.step:''}`);
  return head.join('\n')+'\n\n'+(body.length?body.join('\n'):'現在、事務所で確認する項目はありません。')+'\n';
 }
 // CSVのセル：式として読まれる文字（= + - @ タブ CR）で始まるときは先頭に ' を付ける
@@ -244,7 +247,8 @@ function compare(prev,built){
 function reconcile(session,built,now){
  if(!session||typeof session!=='object')return false;if(!session.manual||typeof session.manual!=='object')session.manual={};
  const sig=dataSig(session),old=session.manual.feedbackSnapshot,snap=snapshot(built,sig,now);
- if(!old||typeof old!=='object'||!Array.isArray(old.topics)){session.manual.feedbackSnapshot={...snap,gone:[]};return true;}
+ // 資料を読む前（読込なし）の状態とは比べない：読み込んだだけで「解消した可能性」が出てしまうため
+ if(!old||typeof old!=='object'||!Array.isArray(old.topics)||!(session.imports||[]).length||old.empty){session.manual.feedbackSnapshot={...snap,gone:[],...((session.imports||[]).length?{}:{empty:true})};return !old||JSON.stringify(old.topics)!==JSON.stringify(snap.topics)||!!old.empty!==!(session.imports||[]).length;}
  if(old.sig!==sig){
   const have=new Set(built.items.map(i=>i.topic)),{gone}=compare(old,built);
   const keep=(Array.isArray(old.gone)?old.gone:[]).filter(t=>!have.has(t.topic)&&!gone.some(g=>g.topic===t.topic));

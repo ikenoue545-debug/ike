@@ -339,3 +339,23 @@ test('タグ別の帳票を足しても、既存のチェックの指摘（ID）
  const late=sessionWith([...files(['party','item','department']),...files(['none'])]),rl=E.analyze(late);
  for(const t of ['pl','bs'])assert.deepEqual(rl.financial[t].map(g=>g.account),r0.financial[t].map(g=>g.account),t);
 });
+test('同じCSVを別のファイル名で読み直しても、確認結果のIDと「外した内訳」の判定は変わらない',()=>{
+ for(const f of ['pl-department-2026.csv','bs-party-2026.csv','bs-item-2026.csv']){
+  const type=f.startsWith('bs')?'monthlyBS':'monthlyPL',s=H.session(ctx);
+  const imp=name=>{const text=fs.readFileSync(path.join(__dirname,'fixtures','freee',f),'utf8'),rows=E.parseCSV(text),h=E.headerRow(rows,type,s.project),m=E.importMapping(rows,type,h,s.project),res=E.normalizeRows(rows,type,m,h,{project:s.project,unit:ctx.ReviewFinancial.detectUnit(rows,h),basis:ctx.ReviewFinancial.detectBasis(rows,h)}),src='csv:'+name;T.apply(s,type,res.items.map(r=>({...r,source:name,importSource:src,importErrors:0})),{importSource:src,mode:'replace',record:{type,name,importSource:src,count:res.items.length,errors:0,reportStats:res.reportStats}});};
+  imp('A.csv');const a=new Set(E.analyze(s).findings.map(x=>x.id));
+  imp('B.csv');const b=E.analyze(s).findings;
+  const changed=[...b.filter(x=>!a.has(x.id)).map(x=>x.title)];assert.equal(changed.length,0,f+'：'+changed.join('、'));
+ }
+});
+test('置き換えは新しい帳票の月・期首だけ：期間の短い帳票や別の年度の帳票で、ほかの月の科目合計を消さない',()=>{
+ const s=H.session(ctx),type='monthlyBS',dir=path.join(__dirname,'fixtures','freee');
+ const imp=(text,name)=>{const rows=E.parseCSV(text),h=E.headerRow(rows,type,s.project),m=E.importMapping(rows,type,h,s.project),res=E.normalizeRows(rows,type,m,h,{project:s.project,unit:1,basis:'monthly'}),src='csv:'+name;T.apply(s,type,res.items.map(r=>({...r,source:name,importSource:src,importErrors:0})),{importSource:src,mode:'replace',record:{type,name,importSource:src,count:res.items.length,errors:0,reportStats:res.reportStats}});};
+ imp(fs.readFileSync(path.join(dir,'bs-none-2026.csv'),'utf8'),'none.csv');
+ // 品目別を 2026-01〜09 だけに切った帳票（期首・10〜12月の列なし）
+ const short=fs.readFileSync(path.join(dir,'bs-item-2026.csv'),'utf8').split('\n').filter(Boolean).map((l,i)=>{const c=l.split('","');if(i===0)return l.replace('2026年12月','2026年09月');return [...c.slice(0,3),...c.slice(4,13)].join('","')+'"';});
+ imp(short.join('\n')+'\n','short.csv');
+ const ar=s.datasets.monthlyBS.filter(r=>!r.tagDimension&&r.account==='売掛金');
+ assert.ok(ar.some(r=>r.opening),'期首は残る');assert.ok(ar.some(r=>r.date==='2026-12'),'10〜12月は残る');
+ assert.equal(ar.length,new Set(ar.map(r=>r.date+(r.opening?'o':''))).size,'重複しない');
+});

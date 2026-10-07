@@ -67,12 +67,23 @@ function apply(session,type,items,{importSource,mode='replace',record}){
    if(r.tagDimension===dim)return false;
    return !stale(r);
   });
-  session.datasets[type]=keep.concat(datasetRows);
+  session.datasets[type]=ordered(session.datasets[type],keep,datasetRows);
   session.tagReports=session.tagReports.filter(r=>r.type!==type||r.tagDimension!==dim&&!stale(r)).concat(tagRows);
   session.imports=(session.imports||[]).filter(i=>i.type!==type||slotOf(i)!==dim);
  }
  if(record)session.imports.push({...record,tagDimension:dim});
  return p;
+}
+// 科目の並びは新しい帳票の順。新しい帳票にない科目は、前の帳票で直前にあった科目の後ろに置く。
+// 科目ごとに合計の行を先、タグの行を後にする（科目の並びは最初に出た行で決まるため）。
+function ordered(old,keep,fresh){
+ const order=[],seen=new Set(),push=k=>{if(!seen.has(k)){seen.add(k);order.push(k);}};
+ for(const r of fresh)push(key(r.account));
+ let prev=null;for(const r of old){const k=key(r.account);if(!seen.has(k)&&keep.some(x=>key(x.account)===k)){const at=prev===null?0:order.indexOf(prev)+1;order.splice(at,0,k);seen.add(k);}if(seen.has(k))prev=k;}
+ for(const r of keep)push(key(r.account));
+ const by=new Map(order.map(k=>[k,{parents:[],tags:[]}]));
+ for(const r of [...fresh,...keep])by.get(key(r.account))[r.tagDimension?'tags':'parents'].push(r);
+ return order.flatMap(k=>[...by.get(k).parents,...by.get(k).tags]);
 }
 // 読込状況：帳票ごと・タグごと
 function materials(session){

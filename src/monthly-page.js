@@ -21,9 +21,16 @@ const MAJOR={monthlyPL:/^(売上総利益|売上総損益|営業利益|営業損
 function level(g,type){const k=keyName(g.account);if(MAJOR[type].test(k))return 'major';if(g.role==='summary'&&!(type==='monthlyBS'&&/^差引損益/.test(k)))return 'sub';return 'item';}
 const PL_ORDER=['売上','雑収入','受取利息','仕入','租税公課','荷造運賃','水道光熱','旅費交通','通信','広告宣伝','交際','保険','修繕','消耗品','減価償却','福利厚生','給料','給与','賃金','賞与','法定福利','外注','支払利息','利子割引','地代家賃','家賃','貸倒'];
 function orderOf(a){const k=keyName(a);if(/^雑費|^雑損/.test(k))return 900;const i=PL_ORDER.findIndex(x=>k.includes(x));return i<0?500:i;}
-function statementRows(model,type){
+// BS×取引先の内訳行は科目合計と同じ datasets にあり、タグ別の帳票を読み直すと科目の初出順が内訳行に引きずられる。
+// 帳票の並び（科目合計の行の順）に戻す。
+function reportOrder(groups,session,type){
+ const first=new Map();(session?.datasets?.[type]||[]).forEach((r,i)=>{if(r.tagDimension)return;const k=keyName(r.account);if(!first.has(k))first.set(k,i);});
+ const at=g=>first.get(keyName(g.account))??Infinity;
+ return groups.map((g,i)=>({g,i})).sort((a,b)=>at(a.g)-at(b.g)||a.i-b.i).map(x=>x.g);
+}
+function statementRows(model,type,session){
  const groups=type==='monthlyPL'?model.pl:model.bs;
- if(type!=='monthlyPL'||model.plReference.length)return groups.map(g=>({g,level:level(g,type)}));
+ if(type!=='monthlyPL'||model.plReference.length)return reportOrder(groups,session,type).map(g=>({g,level:level(g,type)}));
  // 仕訳からの参考集計：収益→費用の順に並べ、参考の合計行を付ける（合計は表示だけ。チェックには使わない）
  const months=model.months,by=r=>groups.map((g,i)=>({g,i})).filter(x=>x.g.role===r).sort((a,b)=>orderOf(a.g.account)-orderOf(b.g.account)||a.i-b.i).map(x=>x.g);
  const sum=(list,label,cls)=>{const values=Object.fromEntries(months.map(m=>[m,list.every(g=>Number.isFinite(g.values[m]))?list.reduce((n,g)=>n+g.values[m],0):null]));return {g:{account:label,values,periodTotal:months.every(m=>Number.isFinite(values[m]))?months.reduce((n,m)=>n+values[m],0):null,computed:true},level:cls};};
@@ -38,13 +45,13 @@ function periodText(months){if(!months.length)return '';const [y1,m1]=months[0].
 
 // ---- 階層表示の状態（会社のセッションごと。画面を開いている間だけ保持）
 const states=new WeakMap();
-function uiState(session){let s=states.get(session);if(!s){s={open:new Set(),dims:new Set(),reasons:new Set(),more:new Set(),bsMode:'balance',focusMonth:null,cardsAll:false};states.set(session,s);}return s;}
+function uiState(session){let s=states.get(session);if(!s){s={open:new Set(),dims:new Set(),reasons:new Set(),more:new Set(),bsMode:'balance',focusMonth:null,cardsAll:false,tagDim:{},hideZero:{},sort:{},queries:{}};states.set(session,s);}return s;}
 // 押せるセルの参照（属性に科目名を直接入れない）
 const refs={monthlyPL:[],monthlyBS:[],cards:[],alerts:[]};
 function ref(kind,obj){refs[kind].push(obj);return kind+':'+(refs[kind].length-1);}
 function getRef(v){const i=String(v).lastIndexOf(':'),kind=String(v).slice(0,i);return refs[kind]?.[+String(v).slice(i+1)]||null;}
 const TAG_ICON='<svg class="vt-tagicon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h6l6 6-6 6-6-6z"/><circle cx="5.5" cy="5.5" r="1.3"/></svg>';
-const DIM_HELP={party:'取引先',item:'品目',department:'部門'};
+const DIM_HELP={party:'取引先',item:'品目',department:'部門',segment1:'セグメント1',segment2:'セグメント2',segment3:'セグメント3'};
 function cellButton(kind,r,val,cls='',title=''){
  const direction=r.hot&&Number.isFinite(r.delta)&&r.delta!==0?(r.delta>0?'増':'減'):'',valueLabel=Number.isFinite(val)?(val<0?'マイナス ':'')+amount(Math.abs(val))+'円':'未確定';
  const label=r.account+(r.dim?' '+DIM_HELP[r.dim]+' '+(r.tag||'未選択'):'')+' '+r.month+' '+valueLabel+(direction?'、大きな'+(direction==='増'?'増加':'減少'):'')+(title?'、'+title:'')+'。変動理由と仕訳を見る';
@@ -52,7 +59,7 @@ function cellButton(kind,r,val,cls='',title=''){
 }
 function statementBody(model,type,session,result){
  const st=uiState(session),ctx=V?.context(session,result),ledgerOnly=type==='monthlyBS'&&!model.bs.length;refs[type]=[];
- const months=model.months,rows=ledgerOnly?(ctx?V.ledgerBS(ctx):[]).map(g=>({g,level:'item'})):statementRows(model,type),prev=F.prevMonth(months[0]);
+ const months=model.months,rows=ledgerOnly?(ctx?V.ledgerBS(ctx):[]).map(g=>({g,level:'item'})):statementRows(model,type,session),prev=F.prevMonth(months[0]);
  const groups=type==='monthlyPL'?model.pl:model.bs,openingFlag=groups.some(g=>g.rows?.some(r=>r.opening&&r.date===prev));
  const showOpening=type==='monthlyBS'&&!ledgerOnly&&groups.some(g=>Number.isFinite(g.values[prev]));
  const openVal=g=>g.computed?null:g.values[prev];
@@ -64,43 +71,109 @@ function statementBody(model,type,session,result){
   const d=V.deltaAt(ctx,s,m),hot=V.isHot(session,result,type,g.account,m),title=Number.isFinite(d)?`${s.flowOnly?'当月の増減':type==='monthlyPL'?'前月比':'前月末比'} ${V.signed(d)}`:'';
   return `<td class="${neg?'monthly-negative':''}${hot?' vt-hot '+(d>0?'up':'down'):''}">${cellButton(type,{type,account:g.account,month:m,hot,delta:d},v,'',title)}</td>`;
  }).join('');
+ const o={months,cols,showOpening,blank},sel=ctx&&V.tagSources(session,result,type)[st.tagDim[type]]?st.tagDim[type]:'';
  const body=rows.map(({g,level})=>{
   const can=!!ctx&&!g.computed&&g.role!=='summary',id=type+'|'+g.account,open=can&&st.open.has(id),s=can?V.series(ctx,type,g.account):null,total=type==='monthlyPL'?g.periodTotal:null;
   const label=`<span class="stmt-label${/[A-Za-z0-9()（）・\-]/.test(g.account)||[...g.account].length>9?' plain':''}${[...g.account].length>12?' long':''}">${esc(g.account)}</span>`;
   const acct=can?`<button class="vt-toggle" data-vt-acct="${ref(type,{type,account:g.account})}" aria-expanded="${open}"><span class="vt-tri" aria-hidden="true">${open?'▼':'▶'}</span>${label}</button>`:label;
   let html=`<tr class="stmt-${level}${g.role==='unknown'?' stmt-unknown':''}${open?' vt-open':''}"><th class="stmt-acct" title="${esc(g.account)}"><div class="stmt-acctin">${acct}${g.role==='unknown'?'<span class="stmt-flag" title="科目の分類を確認してください">分類?</span>':''}${g.approximate?'<span class="stmt-flag">概数</span>':''}</div></th>${showOpening?`<td class="stmt-open">${tri(openVal(g))}</td>`:''}${accountCells(g,s)}${type==='monthlyPL'?`<td class="stmt-total ${Number.isFinite(total)&&total<0?'monthly-negative':''}"><span class="stmt-num">${tri(total)}</span></td>`:''}</tr>`;
-  if(open)html+=expanded(type,g,s,session,result,st,{months,cols,showOpening,blank});
+  if(can&&sel)html+=tagBlock(type,g,session,result,st,o,sel,true);
+  if(open)html+=expanded(type,g,s,session,result,st,o);
   return html;
  }).join('');
  const name=session?.project?.name||'',basis=taxBasis(session);
  const modeBar=type==='monthlyBS'&&!ledgerOnly?`<div class="vt-modebar" role="group" aria-label="BSの内訳の表示"><span class="small">内訳の表示</span>${[['balance','残高（BS内訳・期首から計算）'],['flow','当月の増減'],['cumulative','当期累計増減'],['estimate','取引先別の推計（過去の仕訳から）']].map(([k,label])=>`<button class="btn small" data-vt-bsmode="${k}" aria-pressed="${st.bsMode===k}">${label}</button>`).join('')}</div>`:'';
- return `<div class="stmt"><div class="stmt-head"><div class="stmt-title">月 次 推 移</div><div class="stmt-subtitle">${type==='monthlyPL'?'損 益 計 算 書':ledgerOnly?'貸 借 対 照 表 科 目 の 増 減':'貸 借 対 照 表'}</div><div class="stmt-meta"><div><strong>${esc(name)}</strong><span>${periodText(months)}</span></div><span>${basis}（単位：円）</span></div></div><div class="vt-hint"><span>▶ 科目名を押すと「取引先別・品目別・部門別」の内訳と月ごとの変動理由を開きます。金額を押すと、その月の変動理由と根拠の仕訳を右側に表示します。<span class="vt-hotlegend">色付きの金額</span>は大きく動いた月です。<span class="vt-changebadge up">増</span><span class="vt-changebadge down">減</span>は比較対象からの増減、<strong>△</strong>は金額自体のマイナスです。</span>${modeBar}</div>${ledgerOnly?'<div class="notice vt-ledgeronly">月次BSが未読込のため、仕訳帳から集計した<strong>各月の増減</strong>を表示しています（月末残高ではありません）。freeeの月次推移（貸借対照表）CSVを読み込むと月末残高で表示します。</div>':''}<div class="tablewrap stmt-wrap"><table class="stmt-table vt-table"><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
+ return `<div class="stmt"><div class="stmt-head"><div class="stmt-title">月 次 推 移</div><div class="stmt-subtitle">${type==='monthlyPL'?'損 益 計 算 書':ledgerOnly?'貸 借 対 照 表 科 目 の 増 減':'貸 借 対 照 表'}</div><div class="stmt-meta"><div><strong>${esc(name)}</strong><span>${periodText(months)}</span></div><span>${basis}（単位：円）</span></div></div><div class="vt-hint"><span>▶ 科目名を押すと「取引先別・品目別・部門別」の内訳と月ごとの変動理由を開きます。金額を押すと、その月の変動理由と根拠の仕訳を右側に表示します。<span class="vt-hotlegend">色付きの金額</span>は大きく動いた月です。<span class="vt-changebadge up">増</span><span class="vt-changebadge down">減</span>は比較対象からの増減、<strong>△</strong>は金額自体のマイナスです。</span>${modeBar}</div>${ledgerOnly?'<div class="notice vt-ledgeronly">月次BSが未読込のため、仕訳帳から集計した<strong>各月の増減</strong>を表示しています（月末残高ではありません）。freeeの月次推移（貸借対照表）CSVを読み込むと月末残高で表示します。</div>':''}${ctx?tagBar(type,session,result,st):''}<div class="tablewrap stmt-wrap"><table class="stmt-table vt-table"><thead>${head}</thead><tbody>${body}</tbody></table></div></div>`;
+}
+// ---- 表示するタグ（freeeの月次推移と同じ）：選んだタグの内訳を全科目の下に出す。帳票があれば帳票の金額、無ければ仕訳から集計。
+const TAG_LABEL={party:'取引先',item:'品目',department:'部門',segment1:'セグメント1',segment2:'セグメント2',segment3:'セグメント3'};
+const searchKey=s=>String(s??'').normalize('NFKC').toLowerCase().replace(/\s+/g,'');
+let printAll=false;
+function dimsOf(type,session,result){const src=V.tagSources(session,result,type);return [...Object.keys(V.DIMS),...['segment1','segment2','segment3'].filter(d=>src[d])];}
+// 0円だけの行：表示月がすべて0円（「—」の未確定は0円と扱わない）、期首も0円か無し。仕訳との差がある行は残す。
+const zeroRow=(r,months)=>!r.jdiff&&!(Number.isFinite(r.opening)&&r.opening!==0)&&months.some(m=>r.values[m]===0)&&months.every(m=>r.values[m]===0||r.values[m]==null);
+const basisOf=tr=>tr.basis||(['estimated','cumulative'].includes(tr.mode)?'balance':'flow');
+function sizeOf(r,months,basis){
+ if(basis==='balance'){for(let i=months.length-1;i>=0;i--){const v=r.values[months[i]];if(Number.isFinite(v))return Math.abs(v);}return Math.abs(r.opening||0);}
+ return months.reduce((n,m)=>n+Math.abs(r.values[m]||0),0);
+}
+function tagBar(type,session,result,st){
+ if(!V?.tagSources)return '';
+ const src=V.tagSources(session,result,type),sel=src[st.tagDim[type]]?st.tagDim[type]:'',dims=['party','item','department',...['segment1','segment2','segment3'].filter(d=>src[d])],any=dims.some(d=>src[d]);
+ const kind=d=>src[d]==='report'?'帳票':'仕訳';
+ const btn=d=>`<button type="button" class="btn small" data-vt-tagdim="${type}:${d}" aria-pressed="${sel===d}"${!d||src[d]?'':` disabled title="${TAG_LABEL[d]}の入力がありません"`}>${d?TAG_LABEL[d]:'なし'}${src[d]?`<small class="vt-src${src[d]==='report'?' report':''}">${kind(d)}</small>`:''}</button>`;
+ const note=!any?'仕訳・帳票に取引先・品目・部門の入力がありません。':!sel?'タグを選ぶと、すべての科目の下にその内訳を表示します。「帳票」はfreeeの表示するタグ別の月次推移、「仕訳」は仕訳帳からの集計です。':src[sel]==='report'?`${TAG_LABEL[sel]}別はfreeeの帳票の金額です。${type==='monthlyPL'?'読み込んだ仕訳と金額が違う内訳には「仕訳との差」と表示します。':'BSの内訳は累計のため、未選択に相殺額がある科目と預金・現金・カードは、各月の動きを表示します。'}`:`${TAG_LABEL[sel]}別は仕訳から集計した金額です（${TAG_LABEL[sel]}別の帳票は未読込）。${type==='monthlyBS'?'残高・増減は上の「内訳の表示」で切り替えます。':''}`;
+ const q=st.queries[type]||'',hide=st.hideZero[type]!==false;
+ const opts=any?`<div class="vt-tagopts"><label class="vt-check"><input type="checkbox" data-vt-hidezero="${type}"${hide?' checked':''}>0円だけの行を隠す</label><label class="vt-sortsel">並び順<select data-vt-sort="${type}"><option value="">帳票・仕訳の順</option><option value="size"${st.sort[type]==='size'?' selected':''}>金額の大きい順</option></select></label><label class="vt-search"><span>内訳を検索</span><input type="search" data-vt-filter="${type}" value="${esc(q)}" placeholder="取引先・品目・部門名" autocomplete="off"></label></div>`:'';
+ return `<div class="vt-tagbar"><div class="vt-tagseg" role="group" aria-label="表示するタグ"><span class="vt-tagbar-label">表示するタグ</span>${['',...dims].map(btn).join('')}</div>${opts}<p class="vt-tagnote">${note}</p></div><div class="vt-printnote">表示するタグ：${sel?TAG_LABEL[sel]+'（'+kind(sel)+'）':'なし'}（印刷では内訳をすべて表示）</div>`;
+}
+function bsNote(tr,dim){
+ const noun=TAG_LABEL[dim];
+ if(tr.mode==='movement')return tr.semantic==='cash'?`預金・現金・カードの${noun}別は、相手先ごとの入出金の累計です（残高ではありません）。帳票の累計の前月差＝各月の動きを表示します。`:`累計の動き（未選択に相殺額あり）：この科目の${noun}別は、未選択との相殺を含む累計で、各${noun}の残高ではありません。帳票の累計の前月差＝各月の動きを表示します。`;
+ if(tr.mode==='reported')return `freeeの${noun}別のBS（帳票）の月末残高です。売掛金・買掛金・未払金・未払費用で帳票の無い月は、確認できた残高と連続する仕訳から計算します。期首不明・未読込月・重複・読取エラーは「—」。科目合計へ二重加算しません。`;
+ if(tr.mode==='estimated')return `仮定に基づく参考推計です。過去の仕訳（${tr.estimate.start||'—'}〜${tr.estimate.end||'—'}）を取引先ごとに消し込み、取引先別の期首を推定しています（取引先内訳つきBSのある取引先は確定値）。${esc(tr.estimate.statusText||'')}${/証明ではありません/.test(tr.estimate.statusText||'')?'':' BS総額との一致は取引先別配分の証明ではありません。'}${Number.isFinite(tr.opening)&&Math.abs(tr.opening)>=1?' 差 '+tri(tr.opening)+'円は未配賦です。':''} 詳しくは「取引先別の残高と回収・支払の状況」を確認してください。`;
+ if(tr.mode==='cumulative')return '期首内訳を含まない当期累計増減です。マイナスは減少の累計を表し、月末残高のマイナスとは限りません。';
+ if(tr.mode==='unknown')return '科目の期首はBSから反映していますが、この内訳の期首・月末残高は資料から確定できません。「—」で表示します。当月の増減・当期累計増減へ切り替えると、仕訳で分かる動きを確認できます。';
+ return '当月の増減です。マイナスは残高の減少を示します。';
+}
+function cellTitle(tr,r,m,dim){
+ if(r.estimated)return '仮定を置いた参考推計';
+ if(tr.source==='report'){
+  if(tr.basis==='movement')return '帳票の累計の前月差（残高ではありません）';
+  if(tr.basis==='flow'&&!Number.isFinite(r.values[m]))return '帳票にこの月の金額がありません（未読込・重複・読取エラー）';
+  if(tr.basis==='flow'){const d=r.journalDiff?.[m];return Number.isFinite(d)?`帳票 ${amount(r.values[m])}円／仕訳 ${amount(r.journal[m])}円（仕訳との差 ${tri(d)}円）`:r.journalOnly?'帳票に無い内訳（仕訳だけにあります）':'帳票の金額';}
+  return r.valuesBasis?.[m]==='rollforward'?'確認できた残高＋連続する仕訳増減で計算':r.valuesBasis?.[m]==='report'?`${TAG_LABEL[dim]}別のBS（帳票）の月末残高`:r.openingConflict?'前期末と当期首の内訳が不一致。基準確認待ち':'帳票に金額が無い・重複・読取エラーのため未確定';
+ }
+ return tr.mode==='cumulative'?'期首内訳を含まない当期累計増減':tr.mode==='unknown'?'科目期首は反映済み。この内訳の残高は未確定':'当月の増減';
+}
+function tagRowHTML(type,g,tr,r,dim,o){
+ const months=o.months,pl=type==='monthlyPL',click=Object.hasOwn(V.DIMS,dim);
+ const total=pl&&months.every(m=>Number.isFinite(r.values[m]))?months.reduce((a,m)=>a+r.values[m],0):null;
+ const flags=[r.estimated?'参考推計':'',r.derived?'期首＋仕訳':'',r.openingFromPrior?'期首は前期末':'',r.journalOnly?'仕訳のみ':'',r.approximate?'概数':''].filter(Boolean).map(f=>`<small class="stmt-flag">${f}</small>`).join('')+(r.jdiff?'<small class="stmt-flag vt-jflag" title="帳票の金額と、読み込んだ仕訳から集計した金額が違う月があります">仕訳との差</small>':'');
+ const cells=months.map(m=>{const v=r.values[m],jd=Number.isFinite(r.journalDiff?.[m]),title=cellTitle(tr,r,m,dim);
+  return `<td class="${v<0?'monthly-negative':''}${jd?' vt-jdiff':''}">${click?cellButton(type,{type,account:g.account,month:m,dim,tag:r.key},v,'',title):`<span class="stmt-num" title="${esc(title)}">${tri(v)}</span>`}</td>`;}).join('');
+ return `<tr class="vt-tag${r.missing?' vt-missing':''}${o.inline?' vt-inline':''}"><th class="stmt-acct" title="${esc(r.label)}"><div class="vt-taglabel">${TAG_ICON}<span>${esc(r.label)}</span>${flags}</div></th>${o.showOpening?`<td class="stmt-open">${tr.basis==='movement'?'':tri(r.opening)}</td>`:''}${cells}${pl?`<td class="stmt-total"><span class="stmt-num">${tri(total)}</span></td>`:''}</tr>`;
+}
+// 1科目×1タグの内訳行。inline は「表示するタグ」で全科目に出すとき（注記は短く）。ページ送りは横スクロールしない左端の列に置く。
+function tagBlock(type,g,session,result,st,o,dim,inline){
+ const tr=V.tagRows(session,result,type,g.account,dim,st.bsMode);if(!tr)return '';
+ const months=o.months,did=type+'|'+g.account+'|'+dim,out=[],noun=TAG_LABEL[dim],line=(text,cls='')=>`<tr class="vt-tag vt-note${cls}"><th class="stmt-acct"><div class="vt-taglabel vt-wrap"><span>${text}</span></div></th>${o.blank(o.cols-1)}</tr>`;
+ if(tr.mode==='untagged')return line(`${noun}の入力なし<small>（すべて未選択）</small>`,' vt-untagged');
+ if(inline&&tr.mode==='unknown')return line(type==='monthlyBS'?`${noun}別の残高は資料から確定できません（「内訳の表示」で増減に切り替え）`:'科目の分類が未確定のため、内訳を表示できません');
+ if(!inline&&type==='monthlyBS')out.push(`<tr class="vt-tag vt-note"><td colspan="${o.cols}"><div class="notice vt-sticky">${bsNote(tr,dim)} 未読込の金額を0円とは扱いません。</div></td></tr>`);
+ else if(inline&&tr.mode==='movement')out.push(line(tr.semantic==='cash'?'累計の動き（相手先ごとの入出金）':'累計の動き（未選択に相殺額あり）',' vt-sem'));
+ if(!inline&&tr.rows.some(r=>r.jdiff))out.push(`<tr class="vt-tag vt-note"><td colspan="${o.cols}"><div class="notice vt-sticky">仕訳との差：帳票の金額と、読み込んだ仕訳から集計した${noun}別の金額が違う月があります（点線の下線の金額。金額にカーソルを合わせると両方の金額を表示）。仕訳帳の出力範囲や、帳票の出力後の修正を確認してください。</div></td></tr>`);
+ const q=searchKey(st.queries[type]),basis=basisOf(tr);let rows=tr.rows,zero=0;
+ if(st.hideZero[type]!==false&&!printAll){const keep=rows.filter(r=>!zeroRow(r,months));zero=rows.length-keep.length;rows=keep;}
+ if(q&&!printAll)rows=rows.filter(r=>searchKey(r.label).includes(q));
+ if(st.sort[type]==='size')rows=rows.map((r,i)=>({r,i,n:sizeOf(r,months,basis)})).sort((a,b)=>b.n-a.n||a.i-b.i).map(x=>x.r);
+ if(inline&&q&&!printAll&&!rows.length)return '';
+ const all=printAll||st.more.has(did),limit=all?Infinity:30,shown=rows.slice(0,limit);
+ for(const r of shown)out.push(tagRowHTML(type,g,tr,r,dim,{...o,inline}));
+ const pager=[rows.length>limit?`<button type="button" class="btn small vt-more" data-vt-more="${ref(type,{type,account:g.account,dim})}">すべて表示（残り${rows.length-limit}件）</button>`:'',all&&!printAll&&rows.length>30?`<button type="button" class="btn small vt-more" data-vt-less="${ref(type,{type,account:g.account,dim})}">30件に戻す</button>`:'',zero?`<span class="small">0円だけの${noun} ${zero}件を省略</span>`:'',q&&!printAll&&!rows.length?`<span class="small">「${esc(st.queries[type])}」に合う${noun}はありません</span>`:''].filter(Boolean);
+ if(pager.length)out.push(`<tr class="vt-tag vt-pager"><th class="stmt-acct"><div class="vt-pagerin">${pager.join('')}</div></th>${o.blank(o.cols-1)}</tr>`);
+ if(['estimated','cumulative'].includes(tr.mode)&&Number.isFinite(tr.opening)&&Math.abs(tr.opening)>=1)out.push(`<tr class="vt-tag vt-note"><th class="stmt-acct" title="BSの期首のうち、内訳へ配分できない金額です"><div class="vt-taglabel"><span>${tr.estimate?'期首残高（未配賦）':'期首残高（内訳なし）'}</span></div></th>${o.showOpening?`<td class="stmt-open">${tri(tr.opening)}</td>`:''}${months.map(m=>`<td><span class="stmt-num">${tr.available(m)?tri(tr.opening):'—'}</span></td>`).join('')}</tr>`);
+ if(tr.hasDiff)out.push(`<tr class="vt-tag vt-note vt-diff"><th class="stmt-acct" title="科目合計と内訳合計の差です。内訳の出力範囲や期首が未確定のとき、誤りと即断しません"><div class="vt-taglabel"><span>${tr.source==='report'?'帳票の内訳合計との差（範囲要確認）':'帳票との差額（仕訳で未説明）'}</span></div></th>${o.showOpening?'<td class="stmt-open vt-blank"></td>':''}${months.map(m=>`<td><span class="stmt-num">${Number.isFinite(tr.diff[m])&&Math.abs(tr.diff[m])>=1?tri(tr.diff[m]):''}</span></td>`).join('')}${type==='monthlyPL'?'<td class="stmt-total vt-blank"></td>':''}</tr>`);
+ return out.join('');
 }
 function expanded(type,g,s,session,result,st,o){
- const id=type+'|'+g.account,months=o.months,out=[];
- for(const dim of Object.keys(V.DIMS)){
-  const did=id+'|'+dim,open=st.dims.has(did),tr=V.tagRows(session,result,type,g.account,dim,st.bsMode);
-  const n=tr?.rows.length||0,named=tr?.rows.filter(r=>!r.missing).length||0;
-  out.push(`<tr class="vt-dim"><th class="stmt-acct"><button class="vt-toggle vt-dimtoggle" data-vt-dim="${ref(type,{type,account:g.account,dim})}" aria-expanded="${open}"><span class="vt-tri" aria-hidden="true">${open?'▼':'▶'}</span><span>${V.DIMS[dim]}</span><span class="vt-count">${named?named+'件':'入力なし'}</span></button></th>${o.blank(o.cols-1)}</tr>`);
-  if(!open||!tr)continue;
-  if(type==='monthlyBS'){
-   const note=tr.mode==='estimated'?`仮定に基づく参考推計です。過去の仕訳（${tr.estimate.start||'—'}〜${tr.estimate.end||'—'}）を取引先ごとに消し込み、取引先別の期首を推定しています（取引先内訳つきBSのある取引先は確定値）。${esc(tr.estimate.statusText||'')}${/証明ではありません/.test(tr.estimate.statusText||'')?'':' BS総額との一致は取引先別配分の証明ではありません。'}${Number.isFinite(tr.opening)&&Math.abs(tr.opening)>=1?' 差 '+tri(tr.opening)+'円は未配賦です。':''} 詳しくは「取引先別の残高と回収・支払の状況」を確認してください。`:tr.mode==='cumulative'?'期首内訳を含まない当期累計増減です。マイナスは減少の累計を表し、月末残高のマイナスとは限りません。':tr.mode==='reported'?'取引先が明記されたBS内訳を使い、売掛金・買掛金・未払金・未払費用は、確認できる期首と連続する仕訳から月末残高を計算します。各セルの根拠は金額にカーソルを合わせて確認できます。期首不明・未読込月・重複・読取エラーは「—」。科目合計へ二重加算しません。':tr.mode==='unknown'?'科目の期首はBSから反映していますが、この内訳の期首・月末残高は資料から確定できません。「—」で表示します。当月の増減・当期累計増減へ切り替えると、仕訳で分かる動きを確認できます。':'当月の増減です。マイナスは残高の減少を表します。';
-   out.push(`<tr class="vt-tag vt-note"><td colspan="${o.cols}"><div class="notice">${note} 未読込の金額を0円とは扱いません。</div></td></tr>`);
-  }
-  const limit=st.more.has(did)?Infinity:30;
-  for(const r of tr.rows.slice(0,limit)){
-   const total=type==='monthlyPL'&&months.every(m=>Number.isFinite(r.values[m]))?months.reduce((a,m)=>a+r.values[m],0):null;
-   out.push(`<tr class="vt-tag${r.missing?' vt-missing':''}"><th class="stmt-acct" title="${esc(r.label)}"><div class="vt-taglabel">${TAG_ICON}<span>${esc(r.label)}${r.estimated?'<small class="stmt-flag">参考推計</small>':r.reported?'<small class="stmt-flag">'+(r.derived?'期首＋仕訳':'BS内訳')+'</small>':''}</span></div></th>${o.showOpening?`<td class="stmt-open">${tri(r.opening)}</td>`:''}${months.map(m=>{const v=r.values[m];return `<td class="${v<0?'monthly-negative':''}">${cellButton(type,{type,account:g.account,month:m,dim,tag:r.key},v,'',r.estimated?'仮定を置いた参考推計':r.reported?(r.valuesBasis?.[m]==='rollforward'?'確認できた残高＋連続する仕訳増減で計算':r.valuesBasis?.[m]==='report'?'取引先が明記されたBS内訳':r.openingConflict?'前期末と当期首の内訳が不一致。基準確認待ち':'取引先残高・読込条件が未確定'):tr.mode==='cumulative'?'期首内訳を含まない当期累計増減':tr.mode==='unknown'?'科目期首は反映済み。この内訳の残高は未確定':'当月の増減')}</td>`;}).join('')}${type==='monthlyPL'?`<td class="stmt-total"><span class="stmt-num">${tri(total)}</span></td>`:''}</tr>`);
-  }
-  if(tr.rows.length>limit)out.push(`<tr class="vt-tag"><th class="stmt-acct" colspan="${o.cols}"><button class="btn small vt-more" data-vt-more="${ref(type,{type,account:g.account,dim})}">残り${tr.rows.length-limit}件の${DIM_HELP[dim]}を表示</button></th></tr>`);
-  if(['estimated','cumulative'].includes(tr.mode)&&Number.isFinite(tr.opening)&&Math.abs(tr.opening)>=1)out.push(`<tr class="vt-tag vt-note"><th class="stmt-acct" title="BSの期首のうち、内訳へ配分できない金額です"><div class="vt-taglabel"><span>${tr.estimate?'期首残高（未配賦）':'期首残高（内訳なし）'}</span></div></th>${o.showOpening?`<td class="stmt-open">${tri(tr.opening)}</td>`:''}${months.map(m=>`<td><span class="stmt-num">${tr.available(m)?tri(tr.opening):'—'}</span></td>`).join('')}</tr>`);
-  if(tr.hasDiff)out.push(`<tr class="vt-tag vt-note vt-diff"><th class="stmt-acct" title="科目合計と内訳合計の差です。内訳の出力範囲や期首が未確定のとき、誤りと即断しません"><div class="vt-taglabel"><span>${tr.mode==='reported'?'BS内訳合計との差（範囲要確認）':'帳票との差額（仕訳で未説明）'}</span></div></th>${o.showOpening?'<td class="stmt-open vt-blank"></td>':''}${months.map(m=>`<td><span class="stmt-num">${Number.isFinite(tr.diff[m])&&Math.abs(tr.diff[m])>=1?tri(tr.diff[m]):''}</span></td>`).join('')}${type==='monthlyPL'?'<td class="stmt-total vt-blank"></td>':''}</tr>`);
+ const id=type+'|'+g.account,out=[],sel=st.tagDim[type]||'';
+ for(const dim of dimsOf(type,session,result)){
+  if(dim===sel)continue;
+  // 閉じた内訳は件数だけ（行は作らない）
+  const did=id+'|'+dim,open=st.dims.has(did),n=V.tagCount(session,result,type,g.account,dim);
+  const count=n?.n?`${n.n}件${n.source==='report'?'・帳票':''}`:n?.source==='report'?'未選択のみ':'入力なし';
+  out.push(`<tr class="vt-dim"><th class="stmt-acct"><button class="vt-toggle vt-dimtoggle" data-vt-dim="${ref(type,{type,account:g.account,dim})}" aria-expanded="${open}"><span class="vt-tri" aria-hidden="true">${open?'▼':'▶'}</span><span>${TAG_LABEL[dim]}別</span><span class="vt-count">${count}</span></button></th>${o.blank(o.cols-1)}</tr>`);
+  if(open)out.push(tagBlock(type,g,session,result,st,o,dim,false));
  }
  const rid=id+'|reasons',ropen=!st.reasons.has(rid+'|closed');
  out.push(`<tr class="vt-dim vt-reasonhead"><th class="stmt-acct"><button class="vt-toggle vt-dimtoggle" data-vt-reasons="${ref(type,{type,account:g.account})}" aria-expanded="${ropen}"><span class="vt-tri" aria-hidden="true">${ropen?'▼':'▶'}</span><span>変動の理由（仕訳から推測）</span></button></th>${o.blank(o.cols-1)}</tr>`);
  if(ropen){
-  const list=V.monthReasons(session,result,type,g.account);
-  out.push(`<tr class="vt-reasons"><td colspan="${o.cols}"><div class="vt-reasonlist">${list.length?list.map(x=>`<button class="vt-reason${x.notable?' hot':''}" data-vt-ref="${ref(type,{type,account:g.account,month:x.month})}"><span class="vt-rm">${esc(V.yml(x.month))}</span><span class="vt-rd ${x.delta>0?'up':'down'}">${esc(V.signed(x.delta))}</span><span class="vt-rt">${x.ex.headline?`<strong>${esc(x.ex.headline)}</strong>`:''}${x.ex.reason?`<span>${esc(x.ex.reason)}</span>`:''}</span><span class="vt-rl">理由と仕訳 →</span></button>`).join(''):'<p class="small">対象期間に前月から変動した月はありません（前月の金額が未読込の月は比較できません）。</p>'}</div></td></tr>`);
+  // 仕訳が無い月は「資料確認待ち」を月の数だけ並べず、1行にまとめる
+  const list=V.monthReasons(session,result,type,g.account),ready=list.filter(x=>x.ex),wait=list.filter(x=>!x.ex),none=!V.ledgerReady(session,result);
+  const waitLine=none?'<p class="small vt-wait">仕訳が未読込のため、変動の理由はまだ推測できません。仕訳帳を読み込むと、月ごとに理由を表示します。</p>':wait.length?`<p class="small vt-wait">${esc(wait.map(x=>V.ml(x.month)).join('・'))}は仕訳が未読込のため、理由を推測できません。</p>`:'';
+  const buttons=none?'':ready.map(x=>`<button class="vt-reason${x.notable?' hot':''}" data-vt-ref="${ref(type,{type,account:g.account,month:x.month})}"><span class="vt-rm">${esc(V.yml(x.month))}</span><span class="vt-rd ${x.delta>0?'up':'down'}">${esc(V.signed(x.delta))}</span><span class="vt-rt">${x.ex.headline?`<strong>${esc(x.ex.headline)}</strong>`:''}${x.ex.reason?`<span>${esc(x.ex.reason)}</span>`:''}</span><span class="vt-rl">理由と仕訳 →</span></button>`).join('');
+  out.push(`<tr class="vt-reasons"><td colspan="${o.cols}"><div class="vt-reasonlist">${buttons}${!list.length&&!none?'<p class="small">対象期間に前月から変動した月はありません（前月の金額が未読込の月は比較できません）。</p>':''}${waitLine}</div></td></tr>`);
  }
  return out.join('');
 }
@@ -126,8 +199,10 @@ function changesPanel(session,result){
  const st=uiState(session),months=result.financial.months,sel=months.includes(st.focusMonth)?st.focusMonth:null;refs.cards=[];
  const list=V.notable(session,result,{month:sel,limit:sel?30:40}),shown=st.cardsAll?list:list.slice(0,9);
  const chips=`<div class="vt-chips" role="group" aria-label="対象月"><button class="btn small" data-vt-focus-month="" aria-pressed="${!sel}">全期間</button>${months.map(m=>`<button class="btn small" data-vt-focus-month="${m}" aria-pressed="${sel===m}">${esc(V.ml(m))}</button>`).join('')}</div>`;
- const cards=shown.map(n=>{const ex=V.explain(session,result,n.type,n.account,n.month);return `<button class="vt-card" data-vt-ref="${ref('cards',{type:n.type,account:n.account,month:n.month})}"><span class="vt-cardtop"><span class="badge">${n.type==='monthlyPL'?'PL':'BS'}</span><span class="small">${esc(V.yml(n.month))}</span><span class="vt-rd ${n.delta>0?'up':'down'}">${esc(V.signed(n.delta))}</span></span><strong>${esc(n.account)}</strong>${ex?.headline?`<span class="vt-cardhead">主因：${esc(ex.headline)}</span>`:''}${ex?.reasonItem?`<span class="vt-cardwhy"><span class="badge ${ex.reasonItem.level==='高'?'ok':ex.reasonItem.level==='中'?'warn':''}" title="推測の確からしさ">${ex.reasonItem.level}</span>${esc(ex.reason)}</span>`:''}<span class="vt-cardlink">理由と仕訳を見る →</span></button>`;}).join('');
- return `<section class="panel monthly-panel" id="vtChanges"><div class="panelhead"><div><h2>大きく動いた科目と理由</h2><span class="small">前月差${V.yen(V.threshold(ctx))}以上の動きを、仕訳の取引先・品目・相手科目・摘要から説明します。推測は候補で、事実の確認は証憑・通帳で行います。</span></div></div><div class="panelbody">${chips}${list.length?`<div class="vt-cards">${cards}</div>${list.length>9?`<div class="vt-cardsmore"><button class="btn small" data-vt-cards-all="1">${st.cardsAll?'上位9件だけ表示':'残り'+(list.length-9)+'件も表示'}</button></div>`:''}`:`<p class="small">${sel?V.yml(sel)+'に':''}大きく動いた科目はありません。前月の帳票・仕訳が未読込の月は比較できません。</p>`}</div></section>`;
+ // 仕訳が未読込の月は理由を推測しない（「資料確認待ち」をカードの数だけ並べない）
+ const noLedger=!V.ledgerReady(session,result);
+ const cards=shown.map(n=>{const ready=V.ledgerReady(session,result,n.month),ex=ready?V.explain(session,result,n.type,n.account,n.month):null;return `<button class="vt-card" data-vt-ref="${ref('cards',{type:n.type,account:n.account,month:n.month})}"><span class="vt-cardtop"><span class="badge">${n.type==='monthlyPL'?'PL':'BS'}</span><span class="small">${esc(V.yml(n.month))}</span><span class="vt-rd ${n.delta>0?'up':'down'}">${esc(V.signed(n.delta))}</span></span><strong>${esc(n.account)}</strong>${ex?.headline?`<span class="vt-cardhead">主因：${esc(ex.headline)}</span>`:''}${ex?.reasonItem?`<span class="vt-cardwhy"><span class="badge ${ex.reasonItem.level==='高'?'ok':ex.reasonItem.level==='中'?'warn':''}" title="推測の確からしさ">${ex.reasonItem.level}</span>${esc(ex.reason)}</span>`:''}<span class="vt-cardlink">${ready?'理由と仕訳を見る →':'内容を見る →'}</span></button>`;}).join('');
+ return `<section class="panel monthly-panel" id="vtChanges"><div class="panelhead"><div><h2>大きく動いた科目と理由</h2><span class="small">前月差${V.yen(V.threshold(ctx))}以上の動きを、仕訳の取引先・品目・相手科目・摘要から説明します。推測は候補で、事実の確認は証憑・通帳で行います。</span></div></div><div class="panelbody">${chips}${list.length&&noLedger?'<p class="small vt-wait">仕訳が未読込のため、理由はまだ推測できません。帳票の金額の動きだけを表示しています。</p>':''}${list.length?`<div class="vt-cards">${cards}</div>${list.length>9?`<div class="vt-cardsmore"><button class="btn small" data-vt-cards-all="1">${st.cardsAll?'上位9件だけ表示':'残り'+(list.length-9)+'件も表示'}</button></div>`:''}`:`<p class="small">${sel?V.yml(sel)+'に':''}大きく動いた科目はありません。前月の帳票・仕訳が未読込の月は比較できません。</p>`}</div></section>`;
 }
 
 // ---- 右側の分析パネル
@@ -168,24 +243,40 @@ function copyText(text){
  if(navigator.clipboard?.writeText)navigator.clipboard.writeText(text).then(done).catch(()=>fallback());else fallback();
  function fallback(){const ta=document.createElement('textarea');ta.value=text;ta.setAttribute('readonly','');ta.style.position='fixed';ta.style.opacity='0';document.body.appendChild(ta);ta.select();try{document.execCommand('copy');done();}catch(e){}ta.remove();}
 }
+// 表の上の操作（タグ・0円・並び順・検索）は、描き直した後も同じ操作へフォーカスを戻す（検索は入力位置も）
+const KEEP_FOCUS={vtFilter:'data-vt-filter',vtTagdim:'data-vt-tagdim',vtHidezero:'data-vt-hidezero',vtSort:'data-vt-sort'};
 function rerender(type){
  if(!lastRender)return;const sec=document.querySelector(`.monthly-panel[data-stmt="${type}"]`);if(!sec)return;
+ const a=document.activeElement,keep=a&&sec.contains(a)?Object.keys(KEEP_FOCUS).find(k=>a.dataset?.[k]!==undefined):null,kv=keep?a.dataset[keep]:null,ss=keep==='vtFilter'?a.selectionStart:null,se=keep==='vtFilter'?a.selectionEnd:null;
  const wrap=sec.querySelector('.stmt-wrap'),x=wrap?wrap.scrollLeft:0,t=document.createElement('div');
  t.innerHTML=matrixTable(lastRender.model,type,lastRender.cfg,lastRender.session,lastRender.result);sec.replaceWith(t.firstElementChild);
- const w2=document.querySelector(`.monthly-panel[data-stmt="${type}"] .stmt-wrap`);if(w2)w2.scrollLeft=x;
+ const next=document.querySelector(`.monthly-panel[data-stmt="${type}"]`),w2=next?.querySelector('.stmt-wrap');if(w2)w2.scrollLeft=x;
+ if(keep&&next){const el=[...next.querySelectorAll(`[${KEEP_FOCUS[keep]}]`)].find(e=>e.dataset[keep]===kv);if(el){el.focus({preventScroll:true});if(typeof ss==='number')try{el.setSelectionRange(ss,se);}catch{}}}
+}
+// 内訳の検索：日本語入力（変換中）は確定まで描き直さない
+let searchTimer=null,composing=null;
+function applyQuery(input,now){
+ if(!lastRender)return;const type=input.dataset.vtFilter;if(!stmtView[type])return;const st=uiState(lastRender.session);
+ if(!now&&(st.queries[type]||'')===input.value)return;st.queries[type]=input.value;clearTimeout(searchTimer);
+ if(now)rerender(type);else searchTimer=setTimeout(()=>{if(!composing)rerender(type);},150);
 }
 if(typeof document!=='undefined'){
  document.addEventListener('click',e=>{
   const v=e.target.closest?.('[data-stmt-view]');
   if(v&&lastRender){const [type,mode]=v.dataset.stmtView.split(':');if(!stmtView[type]||!['statement','grid'].includes(mode))return;stmtView[type]=mode;rerender(type);return;}
   const p=e.target.closest?.('[data-stmt-print]');
-  if(p){const st=p.closest('.monthly-panel')?.querySelector('.stmt');if(!st)return;document.getElementById('stmtPrint')?.remove();const box=document.createElement('div');box.id='stmtPrint';box.innerHTML=st.outerHTML;document.body.appendChild(box);document.documentElement.classList.add('printing-stmt');const done=()=>{document.documentElement.classList.remove('printing-stmt');box.remove();window.removeEventListener('afterprint',done);};window.addEventListener('afterprint',done);window.print();return;}
+  if(p){const st=p.closest('.monthly-panel')?.querySelector('.stmt'),type=p.dataset.stmtPrint;if(!st)return;let html=st.outerHTML;
+   // 印刷は内訳を30件で区切らず全部出す（画面の参照番号は保つ）
+   if(lastRender&&stmtView[type]){const saved=refs[type];printAll=true;try{html=statementBody(lastRender.model,type,lastRender.session,lastRender.result);}finally{printAll=false;refs[type]=saved;}}
+   document.getElementById('stmtPrint')?.remove();const box=document.createElement('div');box.id='stmtPrint';box.innerHTML=html;document.body.appendChild(box);document.documentElement.classList.add('printing-stmt');const done=()=>{document.documentElement.classList.remove('printing-stmt');box.remove();window.removeEventListener('afterprint',done);};window.addEventListener('afterprint',done);window.print();return;}
   if(!lastRender)return;
   const b=e.target.closest?.('button');if(!b)return;const ds=b.dataset,st=uiState(lastRender.session);
   if(ds.vtAcct){const r=getRef(ds.vtAcct);if(!r)return;const id=r.type+'|'+r.account;if(st.open.has(id))st.open.delete(id);else{st.open.add(id);if(![...st.dims].some(x=>x.startsWith(id+'|')))st.dims.add(id+'|party');}rerender(r.type);return;}
   if(ds.vtDim){const r=getRef(ds.vtDim);if(!r)return;const id=r.type+'|'+r.account+'|'+r.dim;if(st.dims.has(id))st.dims.delete(id);else st.dims.add(id);rerender(r.type);return;}
   if(ds.vtReasons){const r=getRef(ds.vtReasons);if(!r)return;const id=r.type+'|'+r.account+'|reasons|closed';if(st.reasons.has(id))st.reasons.delete(id);else st.reasons.add(id);rerender(r.type);return;}
   if(ds.vtMore){const r=getRef(ds.vtMore);if(!r)return;st.more.add(r.type+'|'+r.account+'|'+r.dim);rerender(r.type);return;}
+  if(ds.vtLess){const r=getRef(ds.vtLess);if(!r)return;st.more.delete(r.type+'|'+r.account+'|'+r.dim);rerender(r.type);return;}
+  if(ds.vtTagdim!==undefined){const [type,dim]=ds.vtTagdim.split(':');if(!stmtView[type]||dim&&!TAG_LABEL[dim])return;st.tagDim[type]=dim;rerender(type);return;}
   if(ds.vtBsmode){if(!['balance','flow','cumulative','estimate'].includes(ds.vtBsmode))return;st.bsMode=ds.vtBsmode;rerender('monthlyBS');return;}
   if(ds.vtExpand){const [type,how]=ds.vtExpand.split(':');const groups=type==='monthlyPL'?lastRender.model.pl:(lastRender.model.bs.length?lastRender.model.bs:V.ledgerBS(V.context(lastRender.session,lastRender.result)));for(const g of groups){if(g.computed||g.role==='summary')continue;const id=type+'|'+g.account;if(how==='open'){st.open.add(id);if(![...st.dims].some(x=>x.startsWith(id+'|')))st.dims.add(id+'|party');}else st.open.delete(id);}rerender(type);return;}
   if(Object.hasOwn(ds,'vtFocusMonth')){const m=ds.vtFocusMonth;st.focusMonth=lastRender.result.financial.months.includes(m)?m:null;const sec=document.getElementById('vtChanges');if(sec){const t=document.createElement('div');t.innerHTML=changesPanel(lastRender.session,lastRender.result);sec.replaceWith(t.firstElementChild);}return;}
@@ -200,6 +291,12 @@ if(typeof document!=='undefined'){
   if(ds.vtCopy){const ex=V.explain(drawer.session,drawer.result,drawer.type,drawer.account,drawer.month,{dim:drawer.dim,tag:drawer.tag});copyText(ds.vtCopy==='prompt'?V.promptText(ex,drawer.session):V.text(ex));return;}
  });
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&drawer){closeDrawer();}});
+ document.addEventListener('change',e=>{const t=e.target,d=t?.dataset;if(!lastRender||!d)return;const st=uiState(lastRender.session);
+  if(d.vtHidezero&&stmtView[d.vtHidezero]){st.hideZero[d.vtHidezero]=!!t.checked;rerender(d.vtHidezero);}
+  else if(d.vtSort&&stmtView[d.vtSort]){st.sort[d.vtSort]=t.value==='size'?'size':'';rerender(d.vtSort);}});
+ document.addEventListener('compositionstart',e=>{if(e.target.matches?.('[data-vt-filter]')){composing=e.target;clearTimeout(searchTimer);}});
+ document.addEventListener('compositionend',e=>{if(e.target.matches?.('[data-vt-filter]')){composing=null;applyQuery(e.target,true);}});
+ document.addEventListener('input',e=>{if(e.target.matches?.('[data-vt-filter]')&&!e.isComposing&&composing!==e.target)applyQuery(e.target);});
  // 大きく動いた月の金額：マウスを乗せたときに理由の要約を作って表示する（描画を軽くするため）
  const tip=e=>{const b=e.target.closest?.('td.vt-hot>button[data-vt-ref]');if(!b||b.dataset.vtTip||!lastRender)return;const r=getRef(b.dataset.vtRef);if(!r)return;b.dataset.vtTip='1';const ex=V.explain(lastRender.session,lastRender.result,r.type,r.account,r.month);if(ex?.summary)b.title=ex.summary;};
  document.addEventListener('mouseover',tip);document.addEventListener('focusin',tip);
@@ -225,7 +322,8 @@ function comparisonTable(model){
 }
 function alertReason(f,session,result){
  if(!V||!/前月から大きく変動/.test(f.title))return '';
- const month=f.months?.at(-1),ex=f.account&&month?V.explain(session,result,/月末残高/.test(f.title)?'monthlyBS':'monthlyPL',f.account,month):null;
+ const month=f.months?.at(-1);if(month&&!V.ledgerReady(session,result,month))return '';
+ const ex=f.account&&month?V.explain(session,result,/月末残高/.test(f.title)?'monthlyBS':'monthlyPL',f.account,month):null;
  return ex&&(ex.headline||ex.reason)?`<span class="vt-alertwhy"><strong>仕訳からの推測</strong>${esc([ex.headline?'主因：'+ex.headline:'',ex.reason].filter(Boolean).join('／'))}</span>`:'';
 }
 function page(session,result,focus){
@@ -236,4 +334,16 @@ function page(session,result,focus){
  return `<div class="monthly-hero panel"><div><div class="eyebrow">MONTHLY REVIEW</div><h2>科目の動きを、取引から説明する</h2><p class="subtitle">freeeと同じ▶の階層で、科目を取引先別・品目別・部門別に開けます。各月の変動は、仕訳の取引先・品目・相手科目・摘要・前年同月から理由を推測します。</p></div><div class="monthly-hero-number"><strong>${findings.length}</strong><span>月次の確認候補</span></div></div><div class="monthly-overview"><div class="panel"><span class="small">PLの基準</span><strong>${m.plReference.length?'freee月次PL':'仕訳からの参考集計'}</strong></div><div class="panel"><span class="small">BSの基準</span><strong>${m.bs.length?'freee月末残高':m.current.length?'仕訳からの各月の増減':'帳票の取込待ち'}</strong></div><div class="panel"><span class="small">負数を確認する科目</span><strong>${negative.length}科目</strong></div></div>${m.notes.map(n=>`<div class="notice monthly-notice">${esc(n)}</div>`).join('')}${changesPanel(session,result)}<section class="panel monthly-panel"><div class="panelhead"><h2>今見るべき科目</h2><button class="btn small" data-view="review">確認キューへ</button></div><div class="monthly-alerts">${findings.length?findings.slice(0,12).map(f=>`<button class="monthly-alert" data-month-finding="${f.id}"><span class="badge ${f.dataReview?'':f.level==='difference'?'red':'warn'}">${f.dataReview?'資料確認':f.level==='difference'?'金額差':'確認候補'}</span><strong>${esc(f.title)}</strong><span class="small">${esc(f.reason)}</span>${alertReason(f,session,result)}<span>理由と次の確認を見る →</span></button>`).join(''):'<div class="panelbody">現在の読込範囲・抽出条件では月次候補がありません。帳票未読込や回収の確認待ちは残ります。</div>'}</div></section>${drill(m,focus)}${matrixTable(m,'monthlyPL',cfg,session,result)}${matrixTable(m,'monthlyBS',cfg,session,result)}${arTable(m,session)}${comparisonTable(m)}<section class="panel monthly-panel"><div class="panelhead"><h2>取り込む資料</h2></div><div class="monthly-materials">${[['monthlyPL','月次PL','単月・円単位の損益計算書'],['monthlyBS','月次BS','各月末残高。前月末も含めると増減を照合'],['current','当期の仕訳帳','対象期間の全科目・全行（取引先・品目・部門の列も）'],['prior','前期の仕訳帳','前期12か月。前年比較・任意の参考推計'],['aging','未決済一覧（任意）','期日別の延滞確認を追加するときだけ']].map(([type,title,desc])=>`<button class="monthly-material" data-action="import" data-type="${type}"><strong>${title}</strong><span class="small">${desc}</span><span>CSV読込</span></button>`).join('')}</div><div class="review-footer">freeeの月次推移は円単位、分類と勘定科目を「同じ列」、内訳を閉じてCSV出力。取引先・品目・部門の内訳は仕訳帳から作るため、仕訳帳は借方・貸方の取引先・品目・部門の列を含めて出力してください。科目・年月・数値を読めない場合や重複行は、読取エラーを表示します。</div></section>`;
 }
 F.page=page;F.chart=chart;
+// 帳票形式の表示状態（表示するタグ・0円の行・並び順・検索・開く科目と内訳）を外から設定する（テスト・他の画面からの案内用）
+root.ReviewMonthlyPage={tagState(session,type,opt={}){
+ if(!session||!stmtView[type])return null;const st=uiState(session);
+ if('dim' in opt)st.tagDim[type]=TAG_LABEL[opt.dim]?opt.dim:'';
+ if('hideZero' in opt)st.hideZero[type]=!!opt.hideZero;
+ if('sort' in opt)st.sort[type]=opt.sort==='size'?'size':'';
+ if('query' in opt)st.queries[type]=String(opt.query??'');
+ for(const a of opt.open||[])st.open.add(type+'|'+a);
+ for(const [a,d] of opt.dims||[])st.dims.add(type+'|'+a+'|'+d);
+ for(const [a,d] of opt.all||[])st.more.add(type+'|'+a+'|'+d);
+ return {dim:st.tagDim[type]||'',hideZero:st.hideZero[type]!==false,sort:st.sort[type]||'',query:st.queries[type]||''};
+}};
 })(typeof window!=='undefined'?window:globalThis);

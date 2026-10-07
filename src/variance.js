@@ -423,7 +423,8 @@ function explain(session,result,type,account,month,opt={}){
  else ex.facts.push(`${ml(p)}${unit} ${yen(prev)} → ${ml(month)}${unit} ${yen(cur)}（${signed(delta)}）${s.reported||type==='monthlyBS'?'':'　※仕訳からの参考集計'}`);
  if(scoped&&type==='monthlyBS'){
   const tr=tagRows(session,result,type,account,scopeDim,'balance'),r=tr?.rows.find(r=>r.key===opt.tag);
-  if(r?.reported){ex.facts.push(`BSの取引先内訳：期首・表示開始前月末 ${yen(r.opening)} ／ ${ml(month)}末 ${yen(r.values[month])}${r.valuesBasis?.[month]==='rollforward'?'（確認できた残高＋連続する読込仕訳の増減で計算）':'（帳票数値）'}。当月の増減と月末残高を区別します。`);
+  if(r?.reported&&tr.mode==='movement')ex.facts.push(`BSの${NOUN[scopeDim]}別の帳票は${tr.semantic==='cash'?'相手先ごとの入出金の累計':'累計の動き（未選択に相殺額あり）'}で、残高ではありません。帳票の累計から見た${ml(month)}の動き：${signed(r.values[month])}`);
+  else if(r?.reported){ex.facts.push(`BSの${NOUN[scopeDim]}内訳：期首・表示開始前月末 ${yen(r.opening)} ／ ${ml(month)}末 ${yen(r.values[month])}${r.valuesBasis?.[month]==='rollforward'?'（確認できた残高＋連続する読込仕訳の増減で計算）':'（帳票数値）'}。当月の増減と月末残高を区別します。`);
    if(r.openingConflict)ex.facts.push('前期末と当期首の取引先別残高に差があり、期首からの計算を保留しています。');
    if(!Number.isFinite(r.opening))ex.facts.push('この取引先の期首・前月末は未読込または重複等で未確定です。');}
   else ex.facts.push('この内訳には確定した期首残高がありません。当期の増減と月末残高を区別してください。');
@@ -493,7 +494,8 @@ function notable(session,result,opt={}){
 function monthReasons(session,result,type,account){
  const c=context(session,result);if(!c)return [];
  const s=series(c,type,account),th=threshold(c);
- return c.months.map(m=>{const d=deltaAt(c,s,m);if(!Number.isFinite(d)||Math.abs(d)<EPS)return null;const ex=explain(session,result,type,account,m);return {month:m,delta:d,notable:!!notableAt(c,s,m),ex};}).filter(Boolean);
+ // 仕訳が未読込の月は理由を推測できないので、説明を作らない（ex:null）
+ return c.months.map(m=>{const d=deltaAt(c,s,m);if(!Number.isFinite(d)||Math.abs(d)<EPS)return null;const ready=ledgerAvailable(c,m);return {month:m,delta:d,notable:!!notableAt(c,s,m),ready,ex:ready?explain(session,result,type,account,m):null};}).filter(Boolean);
 }
 // 売掛金の取引先期首を前期仕訳から推計。同日は借貸を相殺し、CSV行順を決済順と扱わない。
 // 前期開始前の債権が前期中に回収されたという仮定。BSとの差を特定の取引先へ割り当てない。
@@ -510,38 +512,112 @@ function estimatedReceivableOpening(c,s){
  return s.estimatedOpening={values,adjust,start:po.start,end:po.end,allocated:po.allocated,unallocated:po.unallocated,status:po.status,statusText:po.statusText};
 }
 
-// BSの内訳期首が無い資料から確定残高を作らない。推計は明示的な参考表示だけ。
-function reportedTagRows(c,s,t,dim){
- if(dim!=='party'||!s.g?.tagReports?.length)return null;
- const details=s.g.tagReports.filter(r=>r.tagDimension===dim),list=t.list.slice(),keys=new Set(list.map(g=>g.key));
- const detailKey=r=>['未選択','取引先未選択'].includes(clean(r.tagValue))?'':clean(r.tagValue);
- for(const r of details){const k=detailKey(r);if(!keys.has(k)){keys.add(k);list.push({key:k,label:labelOf(dim,k),missing:!k,count:{}});}}
- const valid=r=>Number.isSafeInteger(r.amount)&&!r.approximate&&r.unit!==1000&&!(r.importErrors>0)&&!(c.session.imports||[]).some(i=>i.type===(r.bridgedFrom==='priorBS'?'priorBS':'monthlyBS')&&i.errors>0);
- const cell=(k,m)=>{const matches=details.filter(r=>detailKey(r)===k&&r.date===m);return {value:matches.length===1&&valid(matches[0])?matches[0].amount:null,present:matches.length>0,rows:matches};};
- const p=prevMonth(c.months[0]),mayDerive=/^(?:売掛金|買掛金|未払金|未払費用)$/.test(key(s.account))&&['asset','liability'].includes(s.role);
- const rows=list.map(tg=>{
-  const base=cell(tg.key,p),prior=(c.session.datasets?.priorBS||[]).filter(r=>r.date===p&&key(r.account)===key(s.account)&&r.tagDimension===dim&&detailKey(r)===tg.key);
-  const priorValid=r=>Number.isSafeInteger(r.amount)&&!r.approximate&&r.unit===1&&!(r.importErrors>0)&&!(c.session.imports||[]).some(i=>i.type==='priorBS'&&i.errors>0);
-  const openingConflict=Number.isSafeInteger(base.value)&&prior.length===1&&priorValid(prior[0])&&base.value!==prior[0].amount;
-  const opening=openingConflict?null:base.value,values={},valuesBasis={};let run=opening;
-  for(const m of c.months){const source=cell(tg.key,m);
-   if(Number.isSafeInteger(source.value)){run=source.value;values[m]=run;valuesBasis[m]='report';}
-   else if(!source.present&&mayDerive&&ledgerAvailable(c,m)&&Number.isSafeInteger(run)){const next=run+(tg.flow?.[m]||0);run=Number.isSafeInteger(next)?next:null;values[m]=run;valuesBasis[m]=Number.isSafeInteger(run)?'rollforward':'unknown';}
-   else{run=null;values[m]=null;valuesBasis[m]='unknown';}
-  }
-  return {key:tg.key,label:tg.label,missing:tg.missing,opening,openingConflict,reported:true,derived:Object.values(valuesBasis).includes('rollforward'),values,valuesBasis,count:sum(c.months,m=>tg.count?.[m]||0)};
- });
- const exactSum=values=>{if(!values.length||!values.every(Number.isSafeInteger))return null;const n=Number(values.reduce((a,v)=>a+BigInt(v),0n));return Number.isSafeInteger(n)?n:null;};
- const total=Object.fromEntries(c.months.map(m=>[m,exactSum(rows.map(r=>r.values[m]))]));
- const diff=Object.fromEntries(c.months.map(m=>{const r=valueAt(c,s,m),n=Number.isSafeInteger(total[m])&&Number.isSafeInteger(r)?r-total[m]:null;return [m,Number.isSafeInteger(n)?n:null];}));
- const reportedOpening=exactSum(rows.map(r=>r.opening));
- return {rows,total,diff,hasDiff:Object.values(diff).some(v=>Number.isFinite(v)&&Math.abs(v)>=1),opening:s.opening,reportedOpening,estimate:null,mode:'reported',flowOnly:false,named:rows.some(r=>!r.missing),available:m=>Number.isFinite(total[m]),unknown:false};
+// ---- freeeの「表示するタグ」別の帳票（BS×取引先は財務モデルの内訳、それ以外は session.tagReports）
+// 帳票の内訳は科目合計に足さない。BSのタグ別は「創業以来の累計」で、未選択が残りを受ける（未選択≠0なら各タグは残高ではない）。
+const UNSEL=/^(?:未選択|取引先未選択)$/;
+const TAG_NOUN=Object.freeze({party:'取引先',item:'品目',department:'部門',segment1:'セグメント1',segment2:'セグメント2',segment3:'セグメント3'});
+// 科目→タグ→年月→行 の索引（結果ごとに1回）。突合せのキーは空白を除いた名前、未選択は ''。
+function reportIndex(c,type,dim){
+ const id=type+'\u0001'+dim;c.reportIdx||=new Map();if(c.reportIdx.has(id))return c.reportIdx.get(id);
+ // BS×取引先は前期BSから橋渡しした期首行も含む財務モデルの内訳を使う
+ const src=type==='monthlyBS'&&dim==='party'?c.model.bs.flatMap(g=>(g.tagReports||[]).filter(r=>r.tagDimension==='party')):type==='priorBS'&&dim==='party'?(c.session.datasets?.priorBS||[]).filter(r=>r.tagDimension==='party'):(c.session.tagReports||[]).filter(r=>r.type===type&&r.tagDimension===dim);
+ const T=root.ReviewTagReports,by=new Map();
+ for(const r of src){
+  const a=key(r.account);let acc=by.get(a);if(!acc)by.set(a,acc={account:r.account,tags:new Map(),dates:new Set()});
+  const raw=clean(r.tagValue),k=UNSEL.test(key(raw))?'':key(raw);let g=acc.tags.get(k);if(!g)acc.tags.set(k,g={mkey:k,label:k?raw:'未選択',cells:new Map()});
+  const l=g.cells.get(r.date);if(l)l.push(r);else g.cells.set(r.date,[r]);if(!r.opening)acc.dates.add(r.date);
+ }
+ // 同じ帳票・同じタグの読込に読取エラーがあれば、その内訳の金額は確定値として使わない
+ by.errors=(c.session.imports||[]).some(i=>i.type===type&&i.errors>0&&(T?.slotOf?T.slotOf(i)===dim||(type==='monthlyBS'&&dim==='party'):true));
+ c.reportIdx.set(id,by);return by;
 }
+// clean：未選択なし・0（各タグが本当の残高）／residual：未選択に相殺額あり（累計の動き）／cash：預金・現金・カード（相手先ごとの入出金の累計）／untagged：未選択だけ／flow：PL
+function tagSemantic(s,acc){
+ if(![...acc.tags.keys()].some(Boolean))return 'untagged';
+ if(s.type==='monthlyPL')return 'flow';
+ if(['cash','card'].includes(s.fam))return 'cash';
+ const u=acc.tags.get('');
+ return u&&[...u.cells.values()].some(l=>l.some(r=>Number.isFinite(r.amount)&&r.amount!==0))?'residual':'clean';
+}
+const exactSum=values=>{if(!values.length||!values.every(Number.isSafeInteger))return null;const n=Number(values.reduce((a,v)=>a+BigInt(v),0n));return Number.isSafeInteger(n)?n:null;};
+// 読み込んだタグ別の帳票から内訳行を作る。帳票にこの科目が無ければ null（仕訳からの内訳に戻る）。
+function reportedTagRows(c,s,t,dim){
+ const type=s.type;if(type==='monthlyBS'&&s.flowOnly)return null;
+ const idx=reportIndex(c,type,dim),acc=idx.get(key(s.account));if(!acc||!acc.tags.size)return null;
+ const months=c.months,p=prevMonth(months[0]),sem=tagSemantic(s,acc),bad=idx.errors;
+ const out={dim,semantic:sem,source:'report',estimate:null,flowOnly:false,unknown:false,opening:s.opening,reportedOpening:null};
+ if(sem==='untagged')return {...out,mode:'untagged',basis:'none',rows:[],total:{},diff:{},hasDiff:false,named:false,available:()=>false};
+ // 仕訳の内訳とは空白を除いた名前で対応させる（セグメントは仕訳に無い）
+ const jl=Object.hasOwn(DIMS,dim)?t.list:[],jmap=new Map(jl.map(g=>[g.key?key(g.key):'',g]));
+ const cell=(g,m)=>{const l=g.cells.get(m);if(!l)return {present:false,value:null,approx:false};const r=l[0];return {present:true,value:l.length===1&&!bad&&Number.isSafeInteger(r.amount)&&!(r.importErrors>0)?r.amount:null,approx:r.unit===1000||!!r.approximate,row:r};};
+ const list=[...acc.tags.values()];
+ // 帳票に無いのに仕訳にある内訳（名前の違い・帳票の範囲外）も行に出す
+ for(const [k,g] of jmap)if(!acc.tags.has(k))list.push({mkey:k,label:g.label,cells:new Map(),journalOnly:true});
+ const base=g=>{const j=jmap.get(g.mkey);return {key:j?j.key:(g.mkey?g.label:''),mkey:g.mkey,label:g.label,missing:!g.mkey,reported:!g.journalOnly,journalOnly:!!g.journalOnly,count:sum(months,m=>j?.count[m]||0)};};
+ const finish=(rows,mode,basis,diffOf)=>{
+  const total=Object.fromEntries(months.map(m=>[m,exactSum(rows.map(r=>r.values[m]))]));
+  const diff=Object.fromEntries(months.map(m=>{const r=diffOf(m),n=Number.isSafeInteger(total[m])&&Number.isSafeInteger(r)?r-total[m]:null;return [m,Number.isSafeInteger(n)?n:null];}));
+  return {...out,mode,basis,rows,total,diff,hasDiff:Object.values(diff).some(v=>Number.isFinite(v)&&Math.abs(v)>=1),named:rows.some(r=>!r.missing),available:m=>Number.isFinite(total[m])};
+ };
+ if(sem==='flow'){
+  // PL：帳票の月額。当期仕訳が読み込まれた月は、仕訳から集計したタグ別の金額と比べる（千円単位の帳票は切捨て分を許す）
+  const rows=list.map(g=>{const j=jmap.get(g.mkey),values={},journal={},journalDiff={};let approx=false;
+   for(const m of months){const x=cell(g,m);approx||=x.approx;values[m]=x.present?x.value:acc.dates.has(m)&&!bad?0:null;
+    if(ledgerAvailable(c,m)){const jv=j?.flow[m]||0;journal[m]=jv;if(Number.isFinite(values[m])&&Math.abs(values[m]-jv)>=(x.approx?1000:1))journalDiff[m]=values[m]-jv;}}
+   return {...base(g),opening:null,approximate:approx,values,journal,journalDiff,jdiff:Object.keys(journalDiff).length>0};});
+  const r=finish(rows,'reported','flow',m=>valueAt(c,s,m));r.journalChecked=months.some(m=>ledgerAvailable(c,m));return r;
+ }
+ if(sem==='clean'){
+  // 未選択が無い（または0）BS：各タグの金額は月末残高。売掛金・買掛金・未払金・未払費用は、帳票の無い月を確認できた残高＋連続する仕訳で計算する
+  const mayDerive=/^(?:売掛金|買掛金|未払金|未払費用)$/.test(key(s.account))&&['asset','liability'].includes(s.role);
+  const pidx=reportIndex(c,'priorBS',dim),pacc=pidx.get(key(s.account));
+  const priorValid=r=>Number.isSafeInteger(r.amount)&&!r.approximate&&r.unit===1&&!(r.importErrors>0)&&!pidx.errors;
+  const rows=list.map(g=>{
+   const tg=jmap.get(g.mkey),b=cell(g,p),prior=pacc?.tags.get(g.mkey)?.cells.get(p)||[];
+   const openingConflict=Number.isSafeInteger(b.value)&&prior.length===1&&priorValid(prior[0])&&b.value!==prior[0].amount;
+   // 当期の帳票に期首が無いときは、前期末の同じタグの残高（円・1行）を期首にする（取引先は財務モデルが橋渡し済み）
+   const fromPrior=!b.present&&dim!=='party'&&prior.length===1&&priorValid(prior[0]);
+   let opening=openingConflict?null:fromPrior?prior[0].amount:b.value,approx=b.approx,run=b.approx?null:opening;
+   const values={},valuesBasis={};
+   for(const m of months){const x=cell(g,m);approx||=x.approx;
+    if(Number.isSafeInteger(x.value)){run=x.approx?null:x.value;values[m]=x.value;valuesBasis[m]='report';}
+    else if(!x.present&&mayDerive&&tg&&ledgerAvailable(c,m)&&Number.isSafeInteger(run)){const next=run+(tg.flow?.[m]||0);run=Number.isSafeInteger(next)?next:null;values[m]=run;valuesBasis[m]=Number.isSafeInteger(run)?'rollforward':'unknown';}
+    else{run=null;values[m]=null;valuesBasis[m]='unknown';}
+   }
+   return {...base(g),opening,openingConflict,openingFromPrior:fromPrior,approximate:approx,derived:Object.values(valuesBasis).includes('rollforward'),values,valuesBasis};
+  });
+  const r=finish(rows,'reported','balance',m=>valueAt(c,s,m));r.reportedOpening=exactSum(rows.filter(x=>x.reported).map(x=>x.opening));return r;
+ }
+ // residual・cash：帳票の累計の前月差（各タグの当月の動き）。残高としては表示しない
+ const rows=list.map(g=>{const values={};let approx=false,prev=g.journalOnly?null:cell(g,p).value;
+  for(const m of months){const x=cell(g,m);approx||=x.approx;values[m]=Number.isSafeInteger(x.value)&&Number.isSafeInteger(prev)?x.value-prev:null;prev=x.value;}
+  return {...base(g),opening:null,approximate:approx,values};});
+ return finish(rows,'movement','movement',m=>deltaAt(c,s,m));
+}
+// 内訳の件数だけ（閉じた内訳の見出し用。行は作らない）
+function tagCount(session,result,type,account,dim){
+ const c=context(session,result);if(!c)return null;const s=series(c,type,account);
+ if(!(type==='monthlyBS'&&s.flowOnly)){const acc=reportIndex(c,type,dim).get(key(account));if(acc?.tags.size){const n=[...acc.tags.keys()].filter(Boolean).length;return {n,source:'report',untagged:!n};}}
+ if(!Object.hasOwn(DIMS,dim))return {n:0,source:''};
+ return {n:tags(c,type,account,dim).list.filter(g=>!g.missing).length,source:'journal'};
+}
+// 「表示するタグ」の選択肢：帳票があれば report、仕訳にタグの入力があれば journal、どちらも無ければ出さない
+function tagSources(session,result,type){
+ const c=context(session,result);if(!c)return {};c.tagSrc||=new Map();if(c.tagSrc.has(type))return c.tagSrc.get(type);
+ const out={},pl=type==='monthlyPL',accounts=[...c.byAccount.keys()].filter(a=>(groupOf(c,'monthlyPL',a)?true:isPLAccount(c.model,a))===pl);
+ for(const d of Object.keys(TAG_NOUN)){
+  if(reportIndex(c,type,d).size)out[d]='report';
+  else if(Object.hasOwn(DIMS,d)&&accounts.some(a=>c.byAccount.get(a).some(e=>c.inPeriod.has(e.month)&&tag(e.row,e.side,d))))out[d]='journal';
+ }
+ c.tagSrc.set(type,out);return out;
+}
+function ledgerReady(session,result,m){const c=context(session,result);if(!c)return false;return m?ledgerAvailable(c,m):c.months.some(x=>ledgerAvailable(c,x));}
 function tagRows(session,result,type,account,dim,mode='balance'){
  const c=context(session,result);if(!c)return null;
  const s=series(c,type,account),t=tags(c,type,account,dim),months=c.months;
  const bs=type==='monthlyBS'&&!s.flowOnly,cumulative=bs&&['estimate','cumulative'].includes(mode);
- if(bs&&mode==='balance'){const reported=reportedTagRows(c,s,t,dim);if(reported)return reported;}
+ // 帳票（表示するタグ別）があれば帳票の値。BSは「残高」表示のときだけ（当月の増減・累計・推計は仕訳から）
+ if(type==='monthlyPL'||bs&&mode==='balance'){const reported=reportedTagRows(c,s,t,dim);if(reported)return reported;}
  const estimate=bs&&mode==='estimate'&&dim==='party'?estimatedReceivableOpening(c,s):null;
  const unknown=bs&&(mode==='balance'||mode==='estimate'&&!estimate)||s.role==='unknown';
  const list=t.list.slice();if(estimate)for(const [k] of estimate.values)if(!list.some(g=>g.key===k))list.push(t.map.get(k)||{key:k,label:labelOf(dim,k),missing:!k,flow:{},count:{}});
@@ -585,6 +661,6 @@ function promptText(ex,session){
  const prevRows=ex.prevEntries.slice().sort((a,b)=>Math.abs(b.amount)-Math.abs(a.amount)).slice(0,20).map(e=>`${e.row.date}\t${fmt(e.amount)}\t取引先:${tag(e.row,e.side,'party')||'未選択'}\t品目:${tag(e.row,e.side,'item')||'未選択'}\t摘要:${clean(e.row.description)}`);
  return `あなたは会計事務所の記帳チェック担当です。次の科目が${ml(ex.month)}にこれだけ変動した理由を、仕訳を根拠に説明してください。断定できない点は「推測」と明記し、お客様に確認すべき質問も挙げてください。\n\n会社：${session?.project?.name||''}（${session?.project?.type==='corp'?'法人':'個人事業'}）\n科目：${ex.account}${ex.scoped?'／'+NOUN[ex.dim]+'「'+ex.tagLabel+'」':''}\n${ex.facts.join('\n')}\n\nこのツールの推測：\n${ex.inferences.map(x=>`・${x.short}：${x.text}`).join('\n')||'なし'}\n\n当月の仕訳（金額の大きい順・最大40件）：\n日付\t借貸\t金額\t相手科目\t取引先\t品目\t部門\t摘要\n${rows.join('\n')||'なし'}\n\n前月の仕訳（比較用・最大20件）：\n${prevRows.join('\n')||'なし'}\n`;
 }
-const V={DIMS,NOUN,isHot,tag,looksPerson,family,context,series,valueAt,deltaAt,tags,tagRows,explain,notable,monthReasons,ledgerBS,threshold,html,text,findingHTML,findingText,promptText,signed,yen,fmt,ml,yml};
+const V={DIMS,NOUN,TAG_NOUN,tagCount,tagSources,ledgerReady,reportedTagRows:(session,result,type,account,dim)=>{const c=context(session,result);if(!c)return null;return reportedTagRows(c,series(c,type,account),Object.hasOwn(DIMS,dim)?tags(c,type,account,dim):{list:[],map:new Map()},dim);},isHot,tag,looksPerson,family,context,series,valueAt,deltaAt,tags,tagRows,explain,notable,monthReasons,ledgerBS,threshold,html,text,findingHTML,findingText,promptText,signed,yen,fmt,ml,yml};
 root.ReviewVariance=V;if(typeof module!=='undefined')module.exports=V;
 })(typeof window!=='undefined'?window:globalThis);

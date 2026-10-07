@@ -98,7 +98,7 @@ PL・BSの表の上に、freee と同じ「表示するタグ：なし｜取引�
 python3 build.py                     # dist/自計化レビュー_v3.9.html を作る
 node tests/make-fixtures.js          # 架空の freee 形式CSV（tests/fixtures）を作り直す
 node --test tests/*.test.js          # Node のテスト
-node tests/ui-smoke.js && node tests/ui-import.js && node tests/ui-data.js   # Chromium で画面操作（Playwright）
+node tests/ui-smoke.js && node tests/ui-import.js && node tests/ui-data.js && node tests/ui-tags-import.js   # Chromium で画面操作（Playwright）
 ```
 
 テスト用のデータ（やまだデザイン事務所（架空）ほか）はすべて架空です。お客様の実データはリポジトリに入れていません。

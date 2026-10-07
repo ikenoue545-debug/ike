@@ -1362,7 +1362,130 @@ html.printing-stmt #stmtPrint .notice.vt-sticky{position:static;width:auto}
  .dp-more>summary .small{display:block;margin:4px 0 0}
 }
 
-/* v39-feedback */
+/* v39-feedback：対応の順番（確認キューの段階表示・次にやること・段階ごとの一覧、月次画面の欄、書き出し・印刷） */
+.fo-order{margin-bottom:20px}
+.fo-orderbody{padding:16px 20px 18px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.fo-steps{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}
+.fo-step{width:100%;height:100%;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto auto;column-gap:8px;row-gap:4px;align-items:center;text-align:left;padding:10px 11px;border:1px solid var(--line);border-radius:8px;background:var(--white);color:var(--ink);font:inherit;cursor:pointer}
+.fo-step:hover{border-color:color-mix(in srgb,var(--gold) 55%,var(--line))}
+.fo-step:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.fo-step .fo-no{grid-row:1/3}
+.fo-stepname{font-size:12.5px;font-weight:700;line-height:1.4;overflow-wrap:anywhere}
+.fo-count{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.fo-count strong{font-size:15px;color:var(--ink)}
+.fo-unit{margin-left:1px}
+.fo-bar{grid-column:1/-1;height:4px;border-radius:99px;background:color-mix(in srgb,var(--line) 80%,var(--white));overflow:hidden}
+.fo-bar>span{display:block;height:100%;background:var(--green);border-radius:99px}
+.fo-step.is-current{border-color:var(--gold);box-shadow:inset 0 0 0 1px var(--gold);background:color-mix(in srgb,var(--gold) 8%,var(--white))}
+.fo-step.is-done .fo-no{background:var(--green);color:var(--white)}
+.fo-step.is-empty{opacity:.62}
+.fo-no{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:color-mix(in srgb,var(--ink) 11%,var(--white));color:var(--ink);font-size:12px;font-weight:700;flex-shrink:0}
+.fo-step.is-current .fo-no{background:var(--gold);color:var(--white)}
+.fo-next{display:grid;grid-template-columns:auto minmax(0,1fr);gap:14px;align-items:start;padding:14px 16px;border-radius:10px;border:1px solid color-mix(in srgb,var(--gold) 45%,var(--line));background:color-mix(in srgb,var(--gold) 7%,var(--white))}
+.fo-next.is-empty{grid-template-columns:1fr;border-color:var(--line);background:var(--paper)}
+.fo-nextlabel{font-size:12px;font-weight:700;color:var(--amber);white-space:nowrap;padding-top:2px}
+.fo-nextbody{min-width:0;display:flex;flex-direction:column;gap:6px}
+.fo-nextmeta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.fo-stagechip{font-size:11.5px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:1px 8px;background:var(--white);white-space:nowrap}
+.fo-nexttitle{font-size:15px;line-height:1.55;overflow-wrap:anywhere}
+.fo-nextdo{margin:0;font-size:13px;line-height:1.7;color:var(--ink)}
+.fo-nextstep{display:block;font-size:12.5px;color:var(--muted)}
+.fo-nextfoot{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between}
+.fo-actor{font-size:11px;border-radius:4px;padding:2px 7px;line-height:1.6;display:inline-block;white-space:nowrap;font-weight:600;border:1px solid transparent}
+.fo-actor-request{background:color-mix(in srgb,var(--gold) 15%,var(--white));color:var(--ink);border-color:color-mix(in srgb,var(--gold) 40%,var(--white))}
+.fo-actor-office{background:color-mix(in srgb,var(--green) 12%,var(--white));color:var(--green)}
+.fo-actor-ask{background:color-mix(in srgb,var(--amber) 14%,var(--white));color:var(--amber)}
+.fo-actor-fix{background:color-mix(in srgb,var(--red) 11%,var(--white));color:var(--red)}
+.fo-actor-note{background:color-mix(in srgb,var(--muted) 12%,var(--white));color:var(--muted)}
+.fo-rel{font-size:11px;color:var(--muted);white-space:nowrap}
+.fo-gone{margin:0}
+.fo-gone ul{margin:6px 0 8px;padding-left:20px;line-height:1.7}
+.fo-gone p{margin:0 0 8px}
+.fo-exports{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
+.fo-export{flex:1 1 280px;min-width:0;border:1px solid var(--line);border-radius:8px;background:var(--white)}
+.fo-export>summary{cursor:pointer;padding:9px 12px;font-size:13px;font-weight:600;display:flex;gap:8px;align-items:center}
+.fo-exportn{font-size:12px;font-weight:400;color:var(--muted)}
+.fo-exportbody{padding:0 12px 12px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.fo-exportbody p{margin:0}
+.fo-preview{margin:0;max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:12.5px;line-height:1.7;background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:10px 12px;color:var(--ink)}
+.fo-exportacts{display:flex;flex-wrap:wrap;gap:6px}
+/* 並べ方の切替 */
+.fo-toggle{display:inline-flex;align-items:center;gap:7px;font:inherit;font-size:12px;color:var(--ink);background:none;border:0;padding:4px 2px;cursor:pointer;white-space:nowrap}
+.fo-switch{width:30px;height:17px;border-radius:99px;background:color-mix(in srgb,var(--muted) 35%,var(--white));position:relative;transition:background .15s;flex-shrink:0}
+.fo-switch::after{content:'';position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:var(--white);box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.fo-toggle[aria-pressed=true] .fo-switch{background:var(--green)}
+.fo-toggle[aria-pressed=true] .fo-switch::after{transform:translateX(13px)}
+.fo-toggle:focus-visible{outline:2px solid var(--gold);outline-offset:2px;border-radius:4px}
+@media(prefers-reduced-motion:reduce){.fo-switch,.fo-switch::after{transition:none}}
+/* 段階ごとの一覧 */
+.fo-stage{scroll-margin-top:90px}
+.fo-stagehead{display:flex;gap:10px;align-items:flex-start;padding:12px 21px 10px;background:var(--paper);border-bottom:1px solid var(--line);border-top:1px solid var(--line)}
+.fo-stage:first-child .fo-stagehead{border-top:0}
+.fo-stagetitle{flex:1;min-width:0}
+.fo-stagetitle h3{margin:0;font-size:14px;line-height:1.5}
+.fo-stagetitle p{margin:2px 0 0;font-size:12px;color:var(--muted);line-height:1.6}
+.fo-stagecount{font-size:12px;color:var(--muted);white-space:nowrap;padding-top:2px}
+.fo-stagecount strong{color:var(--ink);font-size:14px}
+.fo-item{border-bottom:1px solid var(--line)}
+.fo-stage .fo-item:last-child{border-bottom:0}
+.fo-item>.finding{border-bottom:0}
+.fo-item.is-done>.finding .findingtitle{color:var(--muted)}
+.fo-carry{margin:-8px 21px 12px 61px;font-size:12px;line-height:1.6}
+.fo-stageprov{margin:0;padding:7px 21px;font-size:12px;line-height:1.6;color:var(--amber);background:color-mix(in srgb,var(--amber) 7%,var(--white));border-bottom:1px solid var(--line)}
+.fo-provtag{font-size:11px;border-radius:4px;padding:2px 6px;line-height:1.6;color:var(--amber);border:1px dashed color-mix(in srgb,var(--amber) 55%,var(--white));white-space:nowrap}
+.fo-carry{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:7px 10px;border-radius:6px;background:color-mix(in srgb,var(--green) 9%,var(--white));color:var(--ink)}
+.fo-related{margin:-4px 21px 12px 61px}
+.fo-related>summary{cursor:pointer;font-size:12px;color:var(--muted);padding:2px 0}
+.fo-related .finding{padding:12px 14px;border:1px solid var(--line);border-radius:6px;margin-top:6px}
+.fo-related .finding:last-child{border-bottom:1px solid var(--line)}
+.fo-material .findingamount .btn{white-space:nowrap}
+/* 月次PL・BS画面の欄 */
+.fo-mpanel .panelbody{display:flex;flex-direction:column;gap:12px;min-width:0}
+.fo-mlead{margin:0}
+.fo-mini{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.fo-mini li{display:flex;align-items:center;gap:6px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;min-width:0;font-size:12px}
+.fo-mini li.is-current{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 8%,var(--white))}
+.fo-mini li.is-current .fo-no{background:var(--gold);color:var(--white)}
+.fo-mini li.is-done .fo-no{background:var(--green);color:var(--white)}
+.fo-mininame{flex:1;min-width:0;line-height:1.35;overflow-wrap:anywhere}
+.fo-minicount{white-space:nowrap;color:var(--muted);font-variant-numeric:tabular-nums}
+.fo-minicount strong{color:var(--ink);font-size:13.5px}
+.fo-mh{margin:2px 0 0;font-size:14px}
+.fo-next3{display:flex;flex-direction:column;gap:6px}
+.fo-nextrow{display:flex;gap:10px;align-items:flex-start;text-align:left;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--white);color:var(--ink);font:inherit;cursor:pointer}
+.fo-nextrow:hover{border-color:color-mix(in srgb,var(--gold) 55%,var(--line))}
+.fo-nextrow:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.fo-nextno{font-size:12px;font-weight:700;color:var(--muted);padding-top:2px;min-width:14px}
+.fo-nextmain{display:flex;flex-direction:column;gap:3px;min-width:0}
+.fo-nextmain strong{font-size:13.5px;line-height:1.5;overflow-wrap:anywhere}
+@media(max-width:1150px){.fo-steps{grid-template-columns:repeat(3,minmax(0,1fr))}.fo-mini{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){
+ .fo-orderbody{padding:12px 14px 14px}
+ .fo-steps,.fo-mini{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+ .fo-step{padding:8px 9px;column-gap:6px}
+ .fo-stepname{font-size:12px}
+ .fo-next{grid-template-columns:1fr;gap:6px;padding:12px}
+ .fo-stagehead{padding:10px 14px}
+ .fo-carry,.fo-related{margin-left:14px;margin-right:14px}
+ .fo-stageprov{padding:7px 14px}
+}
+/* 印刷：書き出したリストだけを出す */
+#foPrint{display:none}
+@media print{
+ html.fo-printing body>*:not(#foPrint){display:none!important}
+ html.fo-printing #foPrint{display:block;color:#000;background:#fff;font-size:10.5pt}
+ #foPrint h1{font-size:15pt;margin:0 0 4pt}
+ #foPrint>p{margin:0 0 10pt;font-size:9.5pt}
+ #foPrint table{width:100%;border-collapse:collapse}
+ #foPrint th,#foPrint td{border:1px solid #888;padding:5pt 6pt;vertical-align:top;text-align:left;line-height:1.55}
+ #foPrint th{background:#eee;white-space:nowrap}
+ #foPrint td.num:first-child{width:3em}
+ #foPrint td.num{text-align:right;white-space:nowrap}
+ #foPrint td span{font-size:9pt;color:#333}
+ #foPrint .fo-answer{width:30%}
+ #foPrint.fo-print-office .fo-answer{width:6%}
+ #foPrint tr{break-inside:avoid}
+}
 </style>
 </head>
 <body>
@@ -2144,13 +2267,14 @@ function normalizeReports(rows,type,mapping,h,cfg,options={}){
   if(isSection(account)&&!/^事業主[貸借]$/.test(key(account))&&amounts.some(x=>clean(x.value))){section=account;account+=' 計';}
   const parsedTotal=reportMoney(reportedTotalRaw,unit),reportedTotal=hasTotal?parsedTotal.value:null;
   if(hasTotal&&!parsedTotal.valid){errors.push({line:i+1,fields:['期間累計の金額（正確な円整数と桁区切りを確認）']});continue;}
+  // 千円の帳票は月ごと・期間累計ごとに千円未満を切り捨てるため、月数×1,000円までの差は注意にしない
   if(totalIndex>=0){
    const ns=cols.map(c=>reportMoney(raw[c.index],unit)),complete=ns.every(n=>n.valid&&Number.isSafeInteger(n.value)),calculated=complete?reportSum(ns.map(n=>n.value)):null,reported=reportedTotal;
    if(complete&&calculated===null)errors.push({line:i+1,fields:['月別合計が正確に計算できる円整数の上限を超えています']});
    const difference=Number.isSafeInteger(calculated)&&Number.isSafeInteger(reported)?reportSum([calculated,-reported]):null;
    if(Number.isSafeInteger(calculated)&&Number.isSafeInteger(reported)&&difference===null)errors.push({line:i+1,fields:['期間累計差額が正確に計算できる円整数の上限を超えています']});
    (tagValue?detailReportedTotals:reportedTotals).push({account,months:cols.map(c=>c.month),reported,calculated,difference,...(tagValue?{tagDimension:tagDim,tagValue}:{})});
-   if(difference!==null&&Math.abs(difference)>.01)warnings.push(account+(tagValue?' / '+tagValue:'')+'の期間累計とCSVの月別合計に差額 '+difference.toLocaleString()+'円があります。帳票の表示方法と読込範囲を確認してください。');
+   if(difference!==null&&Math.abs(difference)>(unit===1000?cols.length*1000:.01))warnings.push(account+(tagValue?' / '+tagValue:'')+'の期間累計とCSVの月別合計に差額 '+difference.toLocaleString()+'円があります。帳票の表示方法と読込範囲を確認してください。');
   }
   for(const cell of amounts){
    if(!cell.date){errors.push({line:i+1,fields:['年付きの月']});continue;}
@@ -2168,7 +2292,8 @@ function normalizeReports(rows,type,mapping,h,cfg,options={}){
   for(let i=items.length-1;i>=0;i--)if(items[i].tagDimension&&tagCheck.dropped.has(key(items[i].account)))items.splice(i,1);
  }
  const referenceMonth=prevMonth(cfg.start),parentItems=items.filter(r=>!r.tagDimension),detailItems=items.filter(r=>r.tagDimension),openingMissingAccounts=type==='monthlyBS'?[...new Set(items.filter(r=>r.role!=='summary').map(r=>r.account))].filter(a=>!parentItems.some(r=>r.account===a&&r.date===referenceMonth&&Number.isFinite(r.amount))):[];
- if(detailItems.length){warnings.push(TAG_DIMS[tagDim]+'別の内訳（'+new Set(detailItems.map(r=>key(r.account))).size+'科目・'+new Set(detailItems.map(r=>key(r.tagValue))).size+'件）は、科目合計とは別に保存し、科目合計には足しません。'+(tagCheck?.checked?'内訳の合計は '+tagCheck.checked+' 科目すべての月で科目合計と照合しました'+(tagCheck.dropped.size?'（合わない科目を除く）':'')+'。':'')+(type==='monthlyBS'&&tagDim==='party'?'取引先別の残高は確定値として回収・支払の確認に使います。':''));const missing=[...new Set(detailItems.map(r=>r.account))].filter(a=>!parentItems.some(r=>r.account===a));if(missing.length)warnings.push('科目合計行がないため、'+missing.join('・')+'の合計残高とBS全体の一致は保留します。取引先内訳を足して科目合計とは扱いません。');}
+ // 内訳を別に保存すること・照合の結果は、注意ではないので取込画面の「表示するタグ」の案内（reportStats.tagCheck）で示す
+ if(detailItems.length){const missing=[...new Set(detailItems.map(r=>r.account))].filter(a=>!parentItems.some(r=>r.account===a));if(missing.length)warnings.push('科目合計の行がない科目があります（'+missing.join('・')+'）。'+TAG_DIMS[tagDim]+'別の内訳を足して科目合計とはしないため、この科目の'+(type==='monthlyBS'?'残高とBS全体の一致':'金額')+'の確認は保留します。');}
  if(openingMissingAccounts.length)warnings.push('レビュー開始月の前月末（'+referenceMonth+'）の確定残高が '+openingMissingAccounts.length+'科目で不足しています。初月の増減照合は保留します。期首付きの通期BS、または前月末を含む月次BSを取り込んでください。');
  if(meta.periodValid&&cols.length&&E.monthRange(meta.start,meta.end).some(m=>!cols.some(c=>c.month===m)))warnings.push('帳票タイトルの期間に対して月見出しが不足しています。表示していない月を0円とは扱いません。');
  const declaredMonths=[...new Set(cols.length?cols.map(c=>c.month):rows.slice(h+1).map(r=>period(get(r,'date'),datedCfg)).filter(Boolean))].sort();
@@ -2330,12 +2455,22 @@ function apply(session,type,items,{importSource,mode='replace',record}){
    if(r.tagDimension===dim)return false;
    return !stale(r);
   });
-  session.datasets[type]=ordered(session.datasets[type],keep,datasetRows);
+  session.datasets[type]=ordered(session.datasets[type],keep,reuse(session.datasets[type],datasetRows));
   session.tagReports=session.tagReports.filter(r=>r.type!==type||r.tagDimension!==dim&&!stale(r)).concat(tagRows);
   session.imports=(session.imports||[]).filter(i=>i.type!==type||slotOf(i)!==dim);
  }
  if(record)session.imports.push({...record,tagDimension:dim});
  return p;
+}
+// 科目合計がすべての月で読込済みと同じ科目は、読込済みの行をそのまま使う。
+// 確認結果のIDは科目合計の行（ファイル名・行番号を含む）から作るため、別のタグの帳票を足しただけでIDを変えない。
+function reuse(old,fresh){
+ const group=rows=>{const m=new Map();for(const r of rows){if(r.tagDimension)continue;const k=key(r.account);if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;};
+ const cell=r=>[r.date,r.opening?1:0,r.amount,r.unit].join('|'),before=group(old),same=new Set();
+ for(const [k,b] of group(fresh)){const a=before.get(k),s=new Set((a||[]).map(cell));if(a&&a.length===b.length&&s.size===a.length&&b.every(r=>s.has(cell(r))))same.add(k);}
+ if(!same.size)return fresh;
+ const done=new Set();
+ return fresh.flatMap(r=>{const k=key(r.account);if(r.tagDimension||!same.has(k))return [r];if(done.has(k))return [];done.add(k);return before.get(k);});
 }
 // 科目の並びは新しい帳票の順。新しい帳票にない科目は、前の帳票で直前にあった科目の後ろに置く。
 // 科目ごとに合計の行を先、タグの行を後にする（科目の並びは最初に出た行で決まるため）。
@@ -4907,8 +5042,269 @@ root.ReviewTagAnalysis={build,addFindings,checks,CLEARING,SETTLE,version:1};
 <script>
 (function(root){
 'use strict';
-// stub: replaced by the implementation
-root.ReviewFeedbackOrder={version:0};
+// 確認キューの「対応の順番」。指摘を6つの段階・誰が動くか・優先度で並べ、同じ論点を1つの対応項目にまとめる。
+// 判断（session.decisions）の状態はそのまま使い、新しい状態は足さない（旧バックアップと互換）。
+const E=root.ReviewEngine;
+const STAGES=[
+ {no:1,name:'資料をそろえる',purpose:'読込不足・読取エラー・帳票と仕訳の不一致・タグ内訳の不一致を解消します。',why:'ここが崩れていると、後ろの判定がすべて変わります。'},
+ {no:2,name:'残高を確定する',purpose:'現預金・期首のつながり・残高一覧との差・マイナス残高を確かめます。',why:'残高が確定しないと、回収・支払や損益の判定ができません。'},
+ {no:3,name:'回収・支払と仮勘定',purpose:'回収・支払の停滞、債権債務の年齢、仮払・立替・仮受の未精算、未登録明細を確かめます。',why:'残高の中身（誰の分か）を確かめます。'},
+ {no:4,name:'売上・経費の計上',purpose:'月ズレ・計上漏れ・重複・大きな変動・資産計上・前払を確かめます。',why:'残高が固まった上で損益を見ます。'},
+ {no:5,name:'税金と区分',purpose:'消費税区分・源泉・私的支出・交際費・給与の預り金を確かめます。',why:'金額が固まってから税務の判断をします。'},
+ {no:6,name:'記帳のしかた（次回から）',purpose:'タグの付け漏れ、記帳ルール、過去との書き方の違いをお伝えします。',why:'今回の数字は変わりませんが、次回の手間が減ります。'}];
+const ACTORS={request:'資料の依頼',office:'事務所で確認',ask:'お客様に質問',fix:'お客様に修正依頼',note:'記録のみ'};
+const ACTOR_DO={request:'お客様に資料をお願いする',office:'事務所で帳票・元帳を照合して判断する',ask:'お客様に取引の内容をうかがう',fix:'お客様にfreeeの入力の見直しをお願いする',note:'記録に残す（お客様への連絡は不要）'};
+const STATUS={open:'未対応',asking:'確認中',done:'完了'};
+const S2=new Set(['balance','cash','loan','opening']),S3=new Set(['ar','ap','aging','temp','unreg','settlement']);
+const S4=new Set(['monthly','duplicate','sales','rent','salary','evidence','asset','interest','prepaid','assetbook','stock','misc']);
+const S5=new Set(['vat','paytax','outsourcetax','taxes','personal','entertain','withholding','tps']),S6=new Set(['rules','other','context']);
+const GROUP={'事前確認':1,'残高':2,'経費':4,'給与':5,'推移':4,'税金':5,'履歴':6};
+// 段階4の中で、事務所が処理を判断するもの（資産計上・前払など）
+const OFFICE4=new Set(['asset','prepaid','assetbook','interest']);
+// 段階1のうち、資料が足りないもの（お客様に依頼する）
+const MISSING=/未読込|読込範囲|読み込まれて|不足|足りな|必要な資料|資料・条件|取引先別期首|期間が/;
+const MATERIALS=[['current','当期の仕訳帳（CSV）'],['monthlyPL','月次推移の損益計算書（CSV）'],['monthlyBS','月次推移の貸借対照表（CSV）']];
+const nkey=s=>String(s??'').normalize('NFKC').replace(/\s+/g,'');
+function ctx(f){const s=String(f?.reviewContext||'');if(s[0]!=='[')return [];try{const a=JSON.parse(s);return Array.isArray(a)?a:[];}catch{return [];}}
+function prefixed(f,p){const s=String(f?.reviewContext||'');if(!s.startsWith(p+':'))return null;try{return JSON.parse(s.slice(p.length+1));}catch{return s.slice(p.length+1);}}
+const tagKind=f=>{const c=ctx(f);return c[0]==='tag-report'?String(c[1]||''):'';};
+function monthsOf(f){
+ const ms=new Set();for(const m of f?.months||[])if(/^\d{4}-\d{2}/.test(m))ms.add(String(m).slice(0,7));
+ for(const r of f?.rows||[]){const d=r&&r.date;if(typeof d==='string'&&/^\d{4}-\d{2}/.test(d))ms.add(d.slice(0,7));}
+ return [...ms].sort();
+}
+function accountOf(f){
+ if(f?.account)return String(f.account);const c=ctx(f);if(c[0]==='tag-report'&&c[4])return String(c[4]);
+ const n=new Map();for(const r of f?.rows||[])if(r&&r.account)n.set(r.account,(n.get(r.account)||0)+1);
+ let best='',k=0;for(const [a,c] of n)if(c>k){best=a;k=c;}return best;
+}
+// 画面・文面に出す科目：複数の科目にまたがる月次の指摘（資金・期首など）には付けない
+function shownAccount(f){if(f?.account)return String(f.account);const c=ctx(f);if(c[0]==='tag-report')return String(c[4]||'');return f?.check==='monthly'?'':accountOf(f);}
+// 段階（先に一致した規則を使う）
+function stageOf(f){
+ if(!f)return 4;
+ if(f.materials)return 1;
+ const kind=tagKind(f),text=String(f.title||'')+' '+String(f.reason||''),c=ctx(f);
+ if(f.integrityCheck||f.check==='sync'||kind==='tag-mismatch'||kind==='tag-conflict')return 1;
+ if(f.check==='monthly'&&/帳票と仕訳|帳票との照合|読込|読取|未読込|照合できません/.test(text))return 1;
+ if(f.check!=='unreg'&&f.dataReview&&f.level==='info')return 1;
+ if(f.level==='difference'||f.balanceCheck||S2.has(f.check)||c[0]==='continuity')return 2;
+ if(f.check==='monthly'&&/マイナス/.test(f.title||'')&&/現金|預金|借入|リース債務/.test(accountOf(f)))return 2;
+ if(f.partyOpeningCheck||f.treasuryCheck||S3.has(f.check)||kind==='tag-negative'||kind==='tag-clearing')return 3;
+ if(kind==='tag-unselected')return 6;
+ // 「その他経費」のうち金額の変動・計上漏れ・マイナスは計上の問題（段階4）。過去にない組み合わせなどは書き方の問題（段階6）
+ if(f.check==='other'&&/通常月から|計上のない月|マイナス|大きく変/.test(f.title||''))return 4;
+ if(S4.has(f.check))return 4;
+ if(S5.has(f.check))return 5;
+ if(S6.has(f.check))return 6;
+ const g=E?.CHECKS?.find(x=>x.key===f.check)?.group;return GROUP[g]||4;
+}
+// 誰が動くか
+function actorOf(f){
+ if(!f)return 'note';
+ if(f.materials)return 'request';
+ const st=stageOf(f),kind=tagKind(f),text=String(f.title||'')+' '+String(f.reason||'');
+ if(st===1)return MISSING.test(text)&&!/読取エラー|重複/.test(f.title||'')?'request':'office';
+ if(st===2)return 'office';
+ if(kind==='tag-clearing')return 'fix';
+ if(st===6)return kind||f.level!=='info'?'fix':'note';
+ // 前月からの大きな変動は、まず事務所で元帳の増減を比べる（説明できないものだけお客様に聞く）
+ if(st===4&&(OFFICE4.has(f.check)||family(f)==='swing'))return 'office';
+ if(f.level==='candidate'||f.level==='difference')return 'ask';
+ return 'note';
+}
+function scoreOf(f,session){
+ const w={difference:3,candidate:2,info:.5}[f?.level]||1,large=Number(session?.project?.large)>0?Number(session.project.large):100000;
+ const m=f?.dataReview?1:Math.min(3,Math.max(.2,Math.abs(Number(f?.amount)||0)/large));
+ const r=monthsOf(f).length>=2?1.3:1,t=(f?.why?.impact||[]).some(x=>x&&(x.area==='税金'||x.area==='消費税'))?1.2:1;
+ return w*m*r*t;
+}
+// 指摘の系統。check:'monthly' は寄せ集めなので、旗と reviewContext で見分ける
+function family(f){
+ const kind=tagKind(f),c=ctx(f);
+ if(kind)return 'tag-report:'+kind;
+ if(f.check!=='monthly')return String(f.check||'');
+ if(c[0]==='continuity')return 'continuity:'+String(c[1]||'');
+ if(f.partyOpeningCheck||prefixed(f,'party-opening')!=null||prefixed(f,'party-opening-held')!=null)return 'party-opening';
+ const st=prefixed(f,'settlement');if(st!=null)return 'settlement:'+(Array.isArray(st)?String(st[0]||''):'');
+ if(f.treasuryCheck){const t=prefixed(f,'treasury');return 'treasury:'+(typeof t==='string'?t:'');}
+ if(f.integrityCheck){const a=prefixed(f,'audit');return 'integrity:'+(typeof a==='string'?a:'diff');}
+ const t=String(f.title||'');
+ if(/マイナス/.test(t))return 'negative';if(/前月から大きく変動/.test(t))return 'swing';if(/帳票と仕訳|帳票との照合/.test(t))return 'report-match';
+ return 'monthly';
+}
+// 取引先・タグ（reviewContext から）
+function partOf(f){
+ const c=ctx(f);
+ if(c[0]==='tag-report')return [c[2],c[3],c[5]].map(x=>nkey(x)).join('/');
+ if(c[0]==='continuity')return [c[3],c[4]].map(x=>nkey(x)).join('/');
+ const po=prefixed(f,'party-opening')??prefixed(f,'party-opening-held');
+ if(Array.isArray(po)&&Array.isArray(po[2]))return po[2].map(x=>nkey(Array.isArray(x)?x[0]:x)).filter(Boolean).sort().join('、');
+ return '';
+}
+// 同じ論点の鍵。行の署名や設定値を含めないので、設定を変えて再分析しても変わらない
+function topicKey(f){
+ if(f?.materials)return '1|materials|'+f.materials;
+ return [stageOf(f),family(f),nkey(accountOf(f)),partOf(f)].join('|');
+}
+function partyLabel(f){
+ const c=ctx(f);if(c[0]==='tag-report')return c[5]&&c[5]!=='未選択'?String(c[5]):'';
+ if(c[0]==='continuity')return String(c[4]||'');
+ const po=prefixed(f,'party-opening')??prefixed(f,'party-opening-held');
+ if(Array.isArray(po)&&Array.isArray(po[2]))return po[2].map(x=>Array.isArray(x)?x[0]:x).filter(Boolean).join('・');
+ const ps=new Set();for(const r of f?.rows||[]){const p=r&&(r.partner||r.party);if(p)ps.add(p);if(ps.size>1)return '';}
+ return [...ps][0]||'';
+}
+const STATUS_DONE=new Set(['resolved','defer']);
+function itemStatus(fs,dec){
+ if(!fs.length)return 'open';let ask=false,done=0;
+ for(const f of fs){const s=dec[f.id]?.status||'open';if(s==='ask')ask=true;else if(STATUS_DONE.has(s))done++;}
+ return done===fs.length?'done':ask?'asking':'open';
+}
+function dataSig(session){
+ const ds=session?.datasets||{},imp=(session?.imports||[]).map(i=>[i.type,i.at,i.count,i.name].join('~')).join('|');
+ return E.hash(JSON.stringify([imp,Object.keys(ds).sort().map(k=>k+':'+(ds[k]||[]).length),(session?.tagReports||[]).length]));
+}
+function materialsItems(session){
+ const ds=session?.datasets||{},p=session?.project||{},out=[];
+ // 何も読み込んでいない会社では、仕訳帳から始める（帳票の依頼は仕訳帳のあと）
+ const list=(ds.current||[]).length?MATERIALS.slice(1):MATERIALS;
+ for(const [type,name] of list){if((ds[type]||[]).length)continue;
+  const f={id:'materials:'+type,materials:type,check:'',level:'info',dataReview:true,title:name+'が読み込まれていません',reason:`${name}がないため、この資料を使う確認ができません。`,amount:0,rows:[],months:[],steps:['freeeから書き出したCSVを「資料の読込」で読み込む。']};
+  out.push({topic:topicKey(f),stage:1,actor:'request',score:2,amount:0,months:p.start&&p.end?[p.start,p.end]:[],findings:[],status:'open',lead:null,materials:type,materialName:name,title:f.title,reason:f.reason,steps:f.steps,account:'',party:'',provisional:null,carried:null});
+ }
+ return out;
+}
+// 項目の金額：明細が重ならない指摘は合計、増減や重なる明細は最大（同じ取引を二重に数えない）
+const rowKey=r=>[r.date,r.id??r.line??'',r.side||'',r.account||'',r.amount??r.debitAmount??r.creditAmount??''].join('\u0001');
+function amountOf(fs){
+ const xs=fs.filter(f=>!f.dataReview),abs=f=>Math.abs(Number(f.amount)||0);if(!xs.length)return {amount:0,amountMode:'single'};
+ if(xs.length===1)return {amount:abs(xs[0]),amountMode:'single'};
+ let overlap=xs.some(f=>['swing','negative'].includes(family(f)));const seen=new Set();
+ for(const f of xs){if(overlap)break;for(const r of f.rows||[]){const k=rowKey(r||{});if(seen.has(k)){overlap=true;break;}}for(const r of f.rows||[])seen.add(rowKey(r||{}));}
+ return overlap?{amount:Math.max(...xs.map(abs)),amountMode:'max'}:{amount:xs.reduce((s,f)=>s+abs(f),0),amountMode:'sum'};
+}
+const cache=new WeakMap();
+function decKey(fs,dec){let s='';for(const f of fs)s+=(dec[f.id]?.status||'')[0]||'-';return s+'|'+Object.keys(dec).length;}
+// 対応の順番を組み立てる
+function build(session,result){
+ const fs=result?.findings||[],dec=session?.decisions||{},pj=session?.project||{},key=[decKey(fs,dec),dataSig(session),pj.large,pj.start,pj.end].join('|');
+ if(result&&typeof result==='object'){const c=cache.get(result);if(c&&c.key===key)return c.built;}
+ const groups=new Map();
+ for(const f of fs){const topic=topicKey(f);let g=groups.get(topic);if(!g){g={topic,stage:stageOf(f),list:[]};groups.set(topic,g);}g.list.push({f,score:scoreOf(f,session)});}
+ const items=materialsItems(session);
+ for(const g of groups.values()){
+  g.list.sort((a,b)=>b.score-a.score||Math.abs(b.f.amount||0)-Math.abs(a.f.amount||0));
+  const findings=g.list.map(x=>x.f),lead=findings[0],months=[...new Set(findings.flatMap(monthsOf))].sort();
+  const {amount,amountMode}=amountOf(findings);
+  const title=String(lead.title||'').replace(/（\d+件）$/,'');
+  items.push({topic:g.topic,stage:g.stage,actor:actorOf(lead),score:g.list[0].score,amount,amountMode,months,findings,status:itemStatus(findings,dec),lead,title,reason:lead.reason,steps:lead.steps||[],account:shownAccount(lead),party:partyLabel(lead),provisional:null,carried:null,blocking:findings.some(f=>f.level==='difference'||f.dataReview)});
+ }
+ for(const it of items)if(it.materials)it.blocking=true;
+ items.sort((a,b)=>a.stage-b.stage||b.score-a.score||b.amount-a.amount||String(a.topic).localeCompare(String(b.topic)));
+ // 先に片付ける段階の注意：前の段階に、差額・判定保留を含む未完了の項目があるとき
+ const blockers=new Map();for(const it of items)if(it.blocking&&it.status!=='done')blockers.set(it.stage,(blockers.get(it.stage)||0)+1);
+ const firstBlock=[...blockers.keys()].sort((a,b)=>a-b)[0];
+ if(firstBlock)for(const it of items)if(it.stage>firstBlock&&it.status!=='done')it.provisional={stage:firstBlock,name:STAGES[firstBlock-1].name,count:blockers.get(firstBlock)};
+ // 前回の判断：今の指摘にない id の判断で、同じ論点（topic）のもの
+ const ids=new Set(fs.map(f=>f.id)),prev=new Map();
+ for(const [id,d] of Object.entries(dec)){
+  if(ids.has(id)||!d||typeof d!=='object'||!d.topic||!d.status||d.status==='open')continue;
+  const p=prev.get(d.topic);if(!p||String(d.at||'')>=String(p.at||''))prev.set(d.topic,{id,status:d.status,note:String(d.note||''),label:d.reviewLabel||'',period:d.reviewPeriod||'',at:d.at||''});
+ }
+ for(const it of items){const p=prev.get(it.topic);if(p&&it.findings.some(f=>(dec[f.id]?.status||'open')==='open'))it.carried=p;}
+ const stages=STAGES.map(s=>{const xs=items.filter(i=>i.stage===s.no);return {...s,items:xs,open:xs.filter(i=>i.status!=='done').length,total:xs.length};});
+ const next=items.find(i=>i.status==='open')||items.find(i=>i.status==='asking')||null;
+ const byId=new Map();for(const it of items)for(const f of it.findings)byId.set(f.id,it);
+ const clientList=items.filter(i=>(i.actor==='ask'||i.actor==='fix'||i.actor==='request')&&i.status!=='done').map(i=>entry(i,session));
+ const officeList=items.filter(i=>i.actor==='office'&&i.status!=='done').map(i=>entry(i,session));
+ const built={stages,items,next,byId,clientList,officeList,order:items.flatMap(i=>i.findings.map(f=>f.id))};
+ if(result&&typeof result==='object')cache.set(result,{key,built});
+ return built;
+}
+// ---- 書き出し
+const yen=n=>new Intl.NumberFormat('ja-JP').format(Math.round(n||0))+'円';
+function ym(m){const x=/^(\d{4})-(\d{2})/.exec(m||'');return x?`${x[1]}年${+x[2]}月`:'';}
+function monthSpan(ms){
+ if(!ms?.length)return '';const a=ms[0],b=ms.at(-1);if(a===b)return ym(a);
+ return a.slice(0,4)===b.slice(0,4)?`${ym(a)}〜${+b.slice(5,7)}月`:`${ym(a)}〜${ym(b)}`;
+}
+const DIM_LABEL={party:'取引先',item:'品目',department:'部門',segment1:'セグメント1',segment2:'セグメント2',segment3:'セグメント3'};
+function summary(it){
+ const t=String(it.title||'').replace(new RegExp('^'+String(it.account||'').replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'：'),'');
+ return t+(it.findings.length>1?`・関連${it.findings.length}件`:'');
+}
+const amountLabel=it=>(it.amountMode==='sum'?'計 ':it.amountMode==='max'?'最大 ':'')+yen(it.amount);
+function entryText(it,session){
+ const p=session?.project||{},span=monthSpan(it.months),acct=it.account||'',party=it.party?`（${it.party}）`:'',amt=it.amount?' '+(it.amountMode==='sum'?'計 ':'')+yen(it.amount):'';
+ if(it.actor==='request'){
+  if(it.materials)return `${it.materialName}をお送りください（${monthSpan([p.start,p.end].filter(Boolean))||'対象期間'}）。`;
+  return `次の確認に必要な資料をお送りください（${span||monthSpan([p.start,p.end].filter(Boolean))||'対象期間'}）。（${summary(it)}）`;
+ }
+ if(it.actor==='fix'){
+  const c=ctx(it.lead),dim=c[0]==='tag-report'?DIM_LABEL[c[3]]||'':'';
+  return `freeeで${acct||'該当の科目'}${party}の${dim?dim+'の':''}入力をご確認ください。${summary(it)}。`;
+ }
+ if(it.actor==='ask'){
+  if(/計上のない月/.test(it.title))return `${span?span+'の':''}${acct||'該当の取引'}${party}について、計上のない月の取引の有無を教えてください。（${summary(it)}）`;
+  return `${span?span+'の':''}${acct||'該当の取引'}${party}${amt}について、取引の内容を教えてください。（${summary(it)}）`;
+ }
+ return `${acct?acct+party+'：':''}${summary(it)}${amt?'（'+amt.trim()+'）':''}`;
+}
+function entry(it,session){
+ const st=STAGES[it.stage-1];
+ return {topic:it.topic,stage:it.stage,stageName:st.name,actor:it.actor,actorLabel:ACTORS[it.actor],status:it.status,statusLabel:STATUS[it.status],account:it.account,party:it.party,months:it.months,monthLabel:monthSpan(it.months),amount:it.amount,amountMode:it.amountMode,amountLabel:it.amount?amountLabel(it):'',title:it.title,count:it.findings.length,ids:it.findings.map(f=>f.id),text:entryText(it,session),step:(it.steps||[])[0]||''};
+}
+const KIND_TAG={request:'資料',ask:'ご質問',fix:'入力の確認'};
+function clientText(list,meta={}){
+ const head=['お客様への確認のお願い',[meta.name,meta.period].filter(Boolean).join('　')].filter(Boolean);
+ const body=(list||[]).map((x,i)=>`${i+1}. 【${KIND_TAG[x.actor]||x.actorLabel}】${x.text}`);
+ return head.join('\n')+'\n\n'+(body.length?body.join('\n'):'現在、お客様に確認する項目はありません。')+'\n';
+}
+function officeText(list,meta={}){
+ const head=['事務所の作業リスト',[meta.name,meta.period].filter(Boolean).join('　')].filter(Boolean);
+ const body=(list||[]).map((x,i)=>`${i+1}. [${x.stage} ${x.stageName}] ${x.account?x.account+(x.party?'（'+x.party+'）':'')+'：':''}${x.title}${x.amount?'（'+x.amountLabel+'）':''}${x.monthLabel?' '+x.monthLabel:''}${x.count>1?' 関連'+x.count+'件':''}${x.step?'\n   次に確認すること：'+x.step:''}`);
+ return head.join('\n')+'\n\n'+(body.length?body.join('\n'):'現在、事務所で確認する項目はありません。')+'\n';
+}
+// CSVのセル：式として読まれる文字（= + - @ タブ CR）で始まるときは先頭に ' を付ける
+function cell(v){let s=String(v??'');if(/^[=+\-@\t\r]/.test(s))s="'"+s;return /[",\r\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
+function csv(list){
+ const head=['番号','段階','誰が','状況','科目','取引先・タグ','対象月','金額（円）','内容','指摘','関連件数'];
+ const rows=(list||[]).map((x,i)=>[i+1,`${x.stage} ${x.stageName}`,x.actorLabel,x.statusLabel,x.account,x.party,x.monthLabel,x.amount?Math.round(x.amount):'',x.text,x.title,x.count]);
+ return '﻿'+[head,...rows].map(r=>r.map(cell).join(',')).join('\r\n')+'\r\n';
+}
+// ---- 再確認の流れ：直前の未対応・確認中の論点を覚えておき、資料を読み直したあとに比べる
+function snapshot(built,sig,at){
+ return {at:at||new Date().toISOString(),sig:sig||'',topics:built.items.filter(i=>i.lead&&i.status!=='done').map(i=>({topic:i.topic,status:i.status==='asking'?'ask':'open',label:(i.account&&!String(i.title).startsWith(i.account)?i.account+'：':'')+i.title}))};
+}
+function compare(prev,built){
+ const have=new Set(built.items.map(i=>i.topic)),gone=[],kept=[];
+ for(const t of prev?.topics||[])(have.has(t.topic)?kept:gone).push(t);
+ return {gone,kept};
+}
+// 画面を描くたびに呼ぶ。読込（資料）が変わっていれば前回と比べ、消えた論点を gone に残す。変わったら true
+function reconcile(session,built,now){
+ if(!session||typeof session!=='object')return false;if(!session.manual||typeof session.manual!=='object')session.manual={};
+ const sig=dataSig(session),old=session.manual.feedbackSnapshot,snap=snapshot(built,sig,now);
+ if(!old||typeof old!=='object'||!Array.isArray(old.topics)){session.manual.feedbackSnapshot={...snap,gone:[]};return true;}
+ if(old.sig!==sig){
+  const have=new Set(built.items.map(i=>i.topic)),{gone}=compare(old,built);
+  const keep=(Array.isArray(old.gone)?old.gone:[]).filter(t=>!have.has(t.topic)&&!gone.some(g=>g.topic===t.topic));
+  session.manual.feedbackSnapshot={...snap,gone:[...keep,...gone.map(t=>({...t,since:old.at||''}))]};return true;
+ }
+ if(JSON.stringify(old.topics)===JSON.stringify(snap.topics))return false;
+ session.manual.feedbackSnapshot={...snap,gone:Array.isArray(old.gone)?old.gone:[]};return true;
+}
+function clearGone(session){const s=session?.manual?.feedbackSnapshot;if(!s||!s.gone?.length)return false;s.gone=[];return true;}
+// 前回の判断を、同じ論点のまだ未確認の指摘に引き継ぐ（自動では引き継がない）。引き継いだ件数を返す
+function usePrevious(session,result,topic,now){
+ const b=build(session,result),it=b.items.find(i=>i.topic===topic);if(!it||!it.carried)return 0;
+ const p=session.project||{},at=now||new Date().toISOString();let n=0;
+ for(const f of it.findings){if((session.decisions[f.id]?.status||'open')!=='open')continue;
+  session.decisions[f.id]={status:it.carried.status,note:it.carried.note,topic,reviewLabel:f.title,reviewPeriod:p.start+'〜'+p.end,at,carriedFrom:it.carried.id};n++;}
+ return n;
+}
+root.ReviewFeedbackOrder={STAGES,ACTORS,ACTOR_DO,STATUS,amountLabel,stageOf,actorOf,scoreOf,topicKey,monthsOf,monthSpan,build,entryText,clientText,officeText,csv,cell,snapshot,compare,reconcile,clearGone,usePrevious,dataSig,version:1};
 })(typeof window!=='undefined'?window:globalThis);
 </script>
 <script>
@@ -5951,8 +6347,132 @@ root.ReviewTagAnalysisUI={panel,csv,version:1};
 <script>
 (function(root){
 'use strict';
-// stub: replaced by the implementation
-root.ReviewFeedbackOrderUI={version:0};
+// 「対応の順番」の画面：確認キューの上の段階表示・次にやること・段階ごとの一覧、月次画面の小さな欄、書き出し（コピー・CSV・印刷）。
+const FO=root.ReviewFeedbackOrder,F=root.ReviewFinancial;
+if(!FO)throw Error('ReviewFeedbackOrderUI requires ReviewFeedbackOrder.');
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nf=new Intl.NumberFormat('ja-JP'),yen=n=>nf.format(Math.round(n||0))+'円';
+const DEC={resolved:'確認済み',ask:'お客様・上司へ確認',defer:'今回深追いせず'};
+const KEY='jikeika-review:feedback-order';
+const state={ordered:true,open:{}};
+try{const v=root.localStorage?.getItem(KEY);if(v==='flat')state.ordered=false;}catch{}
+function ordered(){return state.ordered;}
+function setOrdered(v){state.ordered=!!v;try{root.localStorage?.setItem(KEY,state.ordered?'ordered':'flat');}catch{}}
+const actorBadge=a=>`<span class="fo-actor fo-actor-${esc(a)}">${esc(FO.ACTORS[a]||'')}</span>`;
+const statusBadge=s=>`<span class="badge ${s==='done'?'ok':s==='asking'?'warn':''}">${esc(FO.STATUS[s]||'')}</span>`;
+const meta=session=>({name:session?.project?.name||'',period:session?.project?.start?`${FO.monthSpan([session.project.start,session.project.end])}`:''});
+function amountText(it){
+ if(it.materials)return '';const parts=[];
+ if(it.amount)parts.push(FO.amountLabel(it));
+ const span=FO.monthSpan(it.months);if(span)parts.push(span);
+ return parts.join('・');
+}
+// ---- 確認キューの上：段階表示と「次にやること」
+function steps(b){
+ const cur=b.stages.find(s=>s.open)?.no||0;
+ return `<ol class="fo-steps">${b.stages.map(s=>{const done=s.total-s.open,pct=s.total?Math.round(done/s.total*100):0,cls=[s.no===cur?'is-current':'',s.total&&!s.open?'is-done':'',!s.total?'is-empty':''].filter(Boolean).join(' ');
+  return `<li><button type="button" class="fo-step ${cls}" data-action="foStage" data-stage="${s.no}" title="${esc(s.purpose)}" aria-label="段階${s.no} ${esc(s.name)}：未対応 ${s.open}件／全 ${s.total}件"${s.no===cur?' aria-current="step"':''}><span class="fo-no">${s.total&&!s.open?'✓':s.no}</span><span class="fo-stepname">${esc(s.name)}</span><span class="fo-count"><strong>${s.open}</strong> / ${s.total}<span class="fo-unit">件</span></span><span class="fo-bar" aria-hidden="true"><span style="width:${pct}%"></span></span></button></li>`;}).join('')}</ol>`;
+}
+function nextCard(b){
+ const it=b.next;
+ if(!it)return `<div class="fo-next is-empty"><div class="fo-nextlabel">次にやること</div><p class="fo-nextdo">${b.items.length?'すべての項目に対応しました。確認中の項目は、お客様の回答を待っています。':'いまの資料と条件では、対応する項目はありません。'}</p></div>`;
+ const st=FO.STAGES[it.stage-1],amt=amountText(it),step=(it.steps||[])[0]||'';
+ const btn=it.materials?`<button class="btn primary small" data-view="data">資料の読込へ</button>`:`<button class="btn primary small" data-finding="${esc(it.lead.id)}">この指摘を開く</button>`;
+ return `<div class="fo-next"><div class="fo-nextlabel">次にやること</div><div class="fo-nextbody"><div class="fo-nextmeta"><span class="fo-stagechip">段階${it.stage}　${esc(st.name)}</span>${actorBadge(it.actor)}${it.status==='asking'?statusBadge('asking'):''}</div><strong class="fo-nexttitle">${esc(it.account&&!String(it.title).startsWith(it.account)?it.account+'：':'')}${esc(it.title)}</strong><p class="fo-nextdo">${esc(FO.ACTOR_DO[it.actor]||'')}。${step?`<span class="fo-nextstep">最初に確認すること：${esc(step)}</span>`:''}</p><div class="fo-nextfoot"><span class="small">${esc(amt)}${it.findings.length>1?`${amt?'・':''}関連${it.findings.length}件`:''}</span>${btn}</div></div></div>`;
+}
+function goneNotice(session){
+ const gone=session?.manual?.feedbackSnapshot?.gone;if(!Array.isArray(gone)||!gone.length)return '';
+ const asked=gone.filter(t=>t.status==='ask'),other=gone.length-asked.length;
+ const list=(asked.length?asked:gone).slice(0,8);
+ return `<div class="notice fo-gone"><strong>${asked.length?`前回お客様に確認していた ${asked.length}件`:`前回未対応だった ${gone.length}件`}が、資料を読み直したあとの分析では出てきません。解消した可能性があります。</strong><ul>${list.map(t=>`<li>${esc(t.label||t.topic)}</li>`).join('')}${(asked.length?asked:gone).length>list.length?`<li>ほか ${(asked.length?asked:gone).length-list.length}件</li>`:''}</ul>${asked.length&&other?`<p class="small">ほかに、未対応だった ${other}件も出てきませんでした。</p>`:''}<button class="btn small" data-action="foClearGone">確認しました（表示を消す）</button></div>`;
+}
+function exportBox(kind,b,session){
+ const list=kind==='client'?b.clientList:b.officeList,title=kind==='client'?'お客様への確認リスト':'事務所の作業リスト';
+ const note=kind==='client'?'資料の依頼・お客様への質問・修正のお願いを、対応の順番に並べています（完了した項目は除きます）。':'事務所で照合・判断する項目です（完了した項目は除きます）。';
+ const text=kind==='client'?FO.clientText(list,meta(session)):FO.officeText(list,meta(session));
+ return `<details class="fo-export" data-fo-export="${kind}"${state.open[kind]?' open':''}><summary>${esc(title)}<span class="fo-exportn">${list.length}件</span></summary><div class="fo-exportbody"><p class="small">${esc(note)}</p><pre class="fo-preview" tabindex="0" aria-label="${esc(title)}の内容">${esc(text)}</pre><div class="fo-exportacts"><button class="btn small" data-action="foCopy" data-kind="${kind}">コピー</button><button class="btn small" data-action="foCsv" data-kind="${kind}">CSVで保存</button><button class="btn small" data-action="foPrint" data-kind="${kind}">印刷</button></div></div></details>`;
+}
+function header(session,result){
+ const b=FO.build(session,result),open=b.items.filter(i=>i.status!=='done').length;
+ return `<section class="panel fo-order" aria-labelledby="foTitle"><div class="panelhead"><h2 id="foTitle">対応の順番</h2><span class="small">未対応 ${open}件／全 ${b.items.length}件（同じ論点はまとめて数えています）</span></div><div class="fo-orderbody">${steps(b)}${nextCard(b)}${goneNotice(session)}<div class="fo-exports">${exportBox('client',b,session)}${exportBox('office',b,session)}</div></div></section>`;
+}
+function toggle(){return `<button type="button" class="fo-toggle" data-action="foToggle" aria-pressed="${state.ordered}"><span class="fo-switch" aria-hidden="true"></span>順番どおりに並べる</button>`;}
+// 指摘の行に足す札（誰が動くか・関連件数）
+function rowBadges(it){if(!it)return '';return actorBadge(it.actor)+(it.provisional?`<span class="fo-provtag" title="${esc(provText(it.provisional))}">暫定</span>`:'')+(it.findings.length>1?`<span class="fo-rel">関連${it.findings.length}件</span>`:'');}
+const provText=p=>`先に「${p.name}」の ${p.count}件を片付けると、結果が変わる可能性があります。`;
+function carryHTML(it){
+ const p=it?.carried;if(!p)return '';const note=p.note.trim().replace(/\s+/g,' ');
+ return `<div class="fo-carry"><span>前回：${esc(DEC[p.status]||p.status)}${note?`（${esc(note.length>60?note.slice(0,60)+'…':note)}）`:''}${p.period?`<span class="small">　${esc(p.period)}</span>`:''}</span><button class="btn small" data-action="foUsePrev" data-topic="${esc(it.topic)}">前回の判断を使う</button></div>`;
+}
+function carryFor(session,result,f){const it=FO.build(session,result).byId.get(f.id);return it&&it.lead===f?carryHTML(it):'';}
+function materialRow(it){
+ return `<div class="finding fo-material"><span class="flag info">?</span><span class="findingbody"><span class="findingtitle">${esc(it.title)}</span><span class="findingmeta">${actorBadge(it.actor)}${statusBadge(it.status)}</span><span class="findingtext">${esc(it.reason)}</span></span><span class="findingamount"><button class="btn small" data-view="data">資料の読込へ</button></span></div>`;
+}
+// 段階ごとの一覧。rows は絞り込み・検索を通った指摘、rowFn(f,item) は確認キューの行
+function list(session,result,rows,rowFn,opt={}){
+ const b=FO.build(session,result),show=new Set(rows.map(f=>f.id)),limit=opt.limit||200;let n=0,out='';
+ const q=String(opt.search||''),mat=it=>(opt.filter==='all'||opt.filter==='open'||opt.filter==='info'||!opt.filter)&&(!q||`${it.title} ${it.reason}`.includes(q));
+ for(const s of b.stages){
+  const xs=[];for(const it of s.items){if(n>=limit)break;if(it.materials?mat(it):it.findings.some(f=>show.has(f.id))){xs.push(it);n++;}}
+  if(!xs.length)continue;
+  out+=`<div class="fo-stage" id="foStage${s.no}"><div class="fo-stagehead"><span class="fo-no">${s.no}</span><div class="fo-stagetitle"><h3>${esc(s.name)}</h3><p>${esc(s.purpose)}</p></div><span class="fo-stagecount">未対応 <strong>${s.open}</strong> / ${s.total}</span></div>`;
+  // 先に片付ける段階の注意は、段階の見出しに1回だけ出す（項目には「暫定」の札）
+  const pv=xs.find(i=>i.provisional)?.provisional;if(pv)out+=`<p class="fo-stageprov">暫定：${esc(provText(pv))}</p>`;
+  for(const it of xs){
+   if(it.materials){out+=`<div class="fo-item">${materialRow(it)}</div>`;continue;}
+   const fs=it.findings.filter(f=>show.has(f.id)),lead=fs[0],rest=fs.slice(1);
+   out+=`<div class="fo-item${it.status==='done'?' is-done':''}">${rowFn(lead,it)}${carryHTML(it)}${rest.length?`<details class="fo-related"${rest.some(f=>f.id===opt.selected)?' open':''}><summary>同じ論点の指摘をあと ${rest.length}件表示</summary>${rest.map(f=>rowFn(f,null)).join('')}</details>`:''}</div>`;
+  }
+  out+='</div>';
+ }
+ return out;
+}
+function scrollToStage(no){const el=root.document?.getElementById('foStage'+no);if(!el)return false;el.scrollIntoView({block:'start',behavior:root.matchMedia?.('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});return true;}
+// ---- 書き出し
+function exportList(kind,session,result){const b=FO.build(session,result);return kind==='office'?b.officeList:b.clientList;}
+function exportText(kind,session,result){const l=exportList(kind,session,result);return kind==='office'?FO.officeText(l,meta(session)):FO.clientText(l,meta(session));}
+function exportCSV(kind,session,result){return FO.csv(exportList(kind,session,result));}
+function fileName(kind,session){const p=session?.project||{};return `${kind==='office'?'事務所の作業リスト':'お客様への確認リスト'}_${p.start||''}_${p.end||''}.csv`;}
+function printHTML(kind,session,result){
+ const l=exportList(kind,session,result),m=meta(session),client=kind!=='office',title=client?'お客様への確認のお願い':'事務所の作業リスト';
+ const today=new Date(),d=`${today.getFullYear()}年${today.getMonth()+1}月${today.getDate()}日`;
+ const rows=l.map((x,i)=>client?`<tr><td class="num">${i+1}</td><td>${esc(x.text)}</td><td class="fo-answer"></td></tr>`:`<tr><td class="num">${i+1}</td><td>${x.stage} ${esc(x.stageName)}</td><td>${esc(x.account)}${x.party?'<br>'+esc(x.party):''}</td><td>${esc(x.title)}${x.step?`<br><span>次に確認すること：${esc(x.step)}</span>`:''}</td><td class="num">${esc(x.amountLabel||'')}</td><td class="fo-answer"></td></tr>`).join('');
+ const head=client?'<tr><th>番号</th><th>確認したいこと</th><th>ご回答</th></tr>':'<tr><th>番号</th><th>段階</th><th>科目・相手</th><th>内容</th><th>金額</th><th>済</th></tr>';
+ return `<h1>${esc(title)}</h1><p>${esc([m.name,m.period].filter(Boolean).join('　'))}　${esc(d)}作成</p>${l.length?`<table>${'<thead>'+head+'</thead>'}<tbody>${rows}</tbody></table>`:'<p>現在、該当する項目はありません。</p>'}`;
+}
+function print(kind,session,result,opt={}){
+ const doc=root.document;if(!doc)return;doc.getElementById('foPrint')?.remove();
+ const host=doc.createElement('div');host.id='foPrint';host.className=kind==='office'?'fo-print-office':'fo-print-client';host.innerHTML=printHTML(kind,session,result);doc.body.appendChild(host);
+ doc.documentElement.classList.add('fo-printing');
+ const done=()=>{doc.documentElement.classList.remove('fo-printing');host.remove();root.removeEventListener?.('afterprint',done);};
+ if(opt.dryRun)return done;
+ root.addEventListener?.('afterprint',done);root.print?.();
+}
+// ---- 月次PL・BS画面の欄
+function panel(session,result){
+ const b=FO.build(session,result),cur=b.stages.find(s=>s.open)?.no||0;
+ const next=b.items.filter(i=>i.status==='open').slice(0,3);
+ const counts=`<ol class="fo-mini">${b.stages.map(s=>`<li class="${s.no===cur?'is-current':''}${s.total&&!s.open?' is-done':''}"><span class="fo-no">${s.no}</span><span class="fo-mininame">${esc(s.name)}</span><span class="fo-minicount"><strong>${s.open}</strong>/${s.total}</span></li>`).join('')}</ol>`;
+ const rows=next.map((it,i)=>{const label=`${it.account&&!String(it.title).startsWith(it.account)?it.account+'：':''}${it.title}`,amt=amountText(it);
+  const attr=it.materials?'data-view="data"':`data-month-finding="${esc(it.lead.id)}"`;
+  return `<button class="fo-nextrow" ${attr}><span class="fo-nextno">${i+1}</span><span class="fo-nextmain"><span class="fo-nextmeta"><span class="fo-stagechip">段階${it.stage}</span>${actorBadge(it.actor)}</span><strong>${esc(label)}</strong>${amt?`<span class="small">${esc(amt)}</span>`:''}</span></button>`;}).join('');
+ return `<section class="panel monthly-panel fo-mpanel" id="feedbackOrder" aria-labelledby="feedbackOrderTitle"><div class="panelhead"><h2 id="feedbackOrderTitle">対応の順番</h2><button class="btn small" data-view="review">確認キューで開く</button></div><div class="panelbody"><p class="small fo-mlead">確認候補を「資料をそろえる」から順に片付けます。数字は未対応／全体（同じ論点はまとめて数えています）。</p>${counts}<h3 class="fo-mh">次にやること</h3>${rows?`<div class="fo-next3">${rows}</div>`:`<p class="small">${b.items.length?'未対応の項目はありません。':'いまの資料と条件では、対応する項目はありません。'}</p>`}</div></section>`;
+}
+if(F&&typeof F.page==='function'){
+ const originalPage=F.page;
+ F.page=function(session,result,focus){
+  const html=originalPage.call(this,session,result,focus);if(!result?.financial)return html;
+  // 「今見るべき科目」（月次の確認候補）の直前に置く。見つからなければ月次PLの前、それもなければ末尾
+  const add=panel(session,result),h=html.indexOf('<h2>今見るべき科目</h2>');
+  let at=h<0?-1:html.lastIndexOf('<section',h);if(at<0)at=html.indexOf('<section class="panel monthly-panel" data-stmt=');
+  return at<0?html+add:html.slice(0,at)+add+html.slice(at);
+ };
+}
+if(typeof document!=='undefined'){
+ // 書き出しの開閉は、画面を描き直しても保つ
+ document.addEventListener('toggle',e=>{const d=e.target;if(d?.matches?.('details[data-fo-export]'))state.open[d.dataset.foExport]=d.open;},true);
+}
+root.ReviewFeedbackOrderUI={header,toggle,list,rowBadges,carryHTML,carryFor,panel,ordered,setOrdered,scrollToStage,exportText,exportCSV,fileName,printHTML,print,version:1};
 })(typeof window!=='undefined'?window:globalThis);
 </script>
 <script>
@@ -5964,9 +6484,9 @@ const F=root.ReviewFinancial;
 if(!F||typeof F.page!=='function')throw Error('ReviewMonthlyToc requires the monthly page.');
 const originalPage=F.page,esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // 見出し → 目次での短い名前（スマホで1行に収めるため）。載っていない見出しはそのまま使う。
-const SHORT={'資料の読込範囲と数値照合':'数値照合','資金の動きと、回収・支払の残り':'資金・回収','取引先別の残高と回収・支払の状況':'取引先別の残高','大きく動いた科目と理由':'大きな変動','今見るべき科目':'確認候補','月次PL':'月次PL','月次BS':'月次BS','売掛金の残高と増減':'売掛金','帳票と仕訳の照合':'帳票照合','取り込む資料':'資料'};
+const SHORT={'対応の順番':'対応順','取引先・品目・部門別の帳票':'タグ別帳票','資料の読込範囲と数値照合':'数値照合','資金の動きと、回収・支払の残り':'資金・回収','取引先別の残高と回収・支払の状況':'取引先別の残高','大きく動いた科目と理由':'大きな変動','今見るべき科目':'確認候補','月次PL':'月次PL','月次BS':'月次BS','売掛金の残高と増減':'売掛金','帳票と仕訳の照合':'帳票照合','取り込む資料':'資料'};
 // 正式な名前が入りきらない広さの画面で使う、少し短い名前
-const MID={'資料の読込範囲と数値照合':'読込範囲と数値照合','資金の動きと、回収・支払の残り':'資金の動きと回収・支払','取引先別の残高と回収・支払の状況':'取引先別の残高','大きく動いた科目と理由':'大きく動いた科目','売掛金の残高と増減':'売掛金の残高'};
+const MID={'対応の順番':'対応の順番','取引先・品目・部門別の帳票':'タグ別の帳票','資料の読込範囲と数値照合':'読込範囲と数値照合','資金の動きと、回収・支払の残り':'資金の動きと回収・支払','取引先別の残高と回収・支払の状況':'取引先別の残高','大きく動いた科目と理由':'大きく動いた科目','売掛金の残高と増減':'売掛金の残高'};
 const plain=s=>String(s).replace(/<[^>]*>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/\s+/g,' ').trim();
 // 描画済みのHTMLから、月次の欄（section.monthly-panel）の見出しを順に拾う
 function entries(html){
@@ -6450,13 +6970,24 @@ function detailsHelp(){return `<section class="panel monthly-panel"><div class="
 function monthlyHelp(){return `<section class="panel monthly-panel"><div class="panelhead"><h2>2.5：月次PL・BSから確認する</h2><button class="btn small" data-view="monthly">月次画面へ</button></div><div class="panelbody"><ol class="steps"><li>会社を選び、月次PL・BS画面で対象期間を確認します（決算月を設定していれば期首から自動でそろいます）。画面上の「目次」（メニューの下に固定）を押すと、数値照合・資金・取引先別の残高・大きな変動・月次PL・月次BSなどの欄へすぐ移動できます。いま見ている欄は目次で色が変わります。</li><li>freeeの仕訳帳を、借方・貸方の取引先・品目・部門の列を含めて全件読込。月次BS・単月PLは「表示するタグ」を取引先・品目・部門にして1つずつ出力します（円単位、「分類と勘定科目」は同じ列）。タグ別のCSVには科目の合計も入っているので、タグなしのBS・PLは要りません。読込のとき、タグ別の金額の合計が科目の合計と月ごとに一致するかを確かめ、合わない科目の内訳は使いません。BSが未読込でも、仕訳から各月の増減を表示します。</li><li>科目名の▶から取引先別・品目別・部門別の内訳を開きます。BSの科目期首と取引先別期首は別の情報です。取引先が明記されたBS内訳がない場合、確定残高は「—」。当月増減・当期累計増減へ切り替えられます。タグ別のBSで「未選択」がない科目は、取引先・品目・部門ごとの金額をその月末の残高として使います。「未選択」に相殺する金額がある科目は残高ではなく「累計の動き」として、月ごとの増減を表示します（現金・預金・カードのタグ別は取引の累計で、残高ではありません）。取引先別の参考推計（売掛金・未収入金・買掛金・未払金・未払費用）は明示的に選んだ場合だけ表示し、BS総額との一致を配分の証明とは扱いません。</li><li>「取引先別の残高と回収・支払の状況」では、読み込んだ過去の仕訳帳から取引先別の期首を推定し、当期の仕訳で月末まで繰り越します。取引先ごとに、増えた分（請求・仕入）を同じ金額のもの、なければ古いものから入金・支払で消し込み（先入先出）、読込範囲の始めで当てる相手のない入金・支払は、それより前からの残高の分とみなします。推定の合計とBSの期首の差は「内訳不明」に残し、取引先には配分しません。いちばん古い未回収・未払の経過と、その取引先のふだんの回収・支払日数を比べて「長く未回収の可能性」などを示し、主要な取引先（当期の請求・仕入の多い順）も表示します。取引先が未選択の入金・支払が多い科目（カード払いの未払金など）は判定しません。推定は参考値で、延滞・期日超過を確定するものではありません。</li><li>科目を開くと「変動の理由（仕訳から推測）」に、月ごとの前月差と主な内訳・推測が並びます。色付きの金額は前月から大きく動いた月です。</li><li>金額・内訳・理由の行・「大きく動いた科目と理由」のカードを押すと、右側にその月の分析が開きます。「取引から分かること」（前月→当月、主な取引先・品目、相手科目、最大の取引）と「理由の推測」（確からしさ 高・中・低）を分けて表示し、根拠の仕訳を金額の大きい順に確認できます。◀▶で前後の月へ移れます。</li><li>推測の例：個人名の取引先への送金による事業主貸の増加、カード利用と口座引落しの差、引落し・給与・家賃の計上月のずれ（2か月分）、隔月の取引、自動車税など例年の時期の税金、年払い、新規の取引先、入金の遅れ。「AIに相談する文章をコピー」で、根拠の仕訳付きの質問文も作れます。</li><li>基本の資料は、当期・前期の仕訳帳と、取引先・品目・部門別の月次BS・単月PL（あわせて8ファイル）です。「資料の読込」の各カードで、どのタグ別を読み込んだか（✓・ファイル名・月）を確かめられます。前期BS・前期PL・未登録明細などは「追加資料（必要な分析だけ）」から任意で追加します。資料・照合点検で、未読込月・BS貸借・PL利益・BSへの損益連携・科目分類・期首振替の候補を確認してください。</li><li>資金繰りでは、前期末と当期期首の残高、前年同期間の利益、参考キャッシュフローと現預金増減の差、売掛金・買掛金・未払金・未払費用の残高と入出金候補の観測間隔を確認します。期首内訳が確認できる取引先は、連続する仕訳から月末残高を計算できます。期日や請求書との対応がない資料から延滞・実際の回収日数を確定しません。</li></ol><p style="margin-top:16px">推測は仕訳の科目・取引先・品目・摘要・相手科目・前年同月から作った候補で、事実ではありません。証憑・通帳・お客様への確認で確かめてからメモに残してください。千円・累計PL・期首残高の不足では、正確な照合はできません。</p></div></section>`;}
 function historyHelp(){return `<section class="panel" style="margin-top:20px"><div class="panelhead"><h2>1.1：過去履歴と先生デスク</h2></div><div class="panelbody"><p>「過去の仕訳帳」から同一顧客の複数年CSVを追加。標準は蓄積で、対象開始月より前を参照します。旧版の前期データと確認メモもバックアップから引き継げます。</p><p style="margin-top:12px">取引先＋摘要・用途メモの正規化／3文字列の類似度50%以上を照合。双方に品目・部門がある場合、相違があれば弱い一致にとどめます。仕訳番号があり、過去3仕訳以上・最多科目80%以上で、過去にない科目差を候補にします。索引ごとに直近300件が上限です。これは統計的な処理パターン集計で、AIモデルの再学習ではありません。</p><p style="margin-top:12px">「先生デスク」は過去の仕訳例・検証したルール・確認手順を使う案内型Q&A。外部AI・API料金はありません。自由な文脈理解、税務条件の自動判定、修正仕訳の自動作成は含みません。決算整理の指定・摘要・負の金額による除外にも見落としがあり、過去に一致してもチェックを自動完了にしません。</p></div></section>`;}
 function settings(){const p=session.project;return `<form id="settings" class="panel settings"><div class="field grow"><label for="projectName">案件名</label><input id="projectName" name="name" value="${esc(p.name)}" maxlength="100"></div><div class="field"><label for="entityType">事業者</label><select id="entityType" name="type"><option value="individual" ${p.type==='individual'?'selected':''}>個人事業主</option><option value="corp" ${p.type==='corp'?'selected':''}>法人</option></select></div><div class="field"><label for="periodStart">対象開始月</label><input id="periodStart" name="start" type="month" value="${p.start}" required></div><div class="field"><label for="periodEnd">対象終了月</label><input id="periodEnd" name="end" type="month" value="${p.end}" required></div><button class="btn primary" type="submit">再チェック</button></form>`;}
+// 対応の順番（ReviewFeedbackOrder）。並べ方の切替は FOU が持つ
+const FO=window.ReviewFeedbackOrder,FOU=window.ReviewFeedbackOrderUI;
+function queueRows(){return result.findings.filter(f=>(filter==='all'||filter==='open'&&decision(f.id).status==='open'||filter==='difference'&&f.level==='difference'||filter==='info'&&f.level==='info')&&(!search||`${f.title} ${f.reason} ${E.CHECKS.find(c=>c.key===f.check)?.title} ${(f.why?.tags||[]).join(' ')}`.includes(search)));}
+function queueList(rows){
+ const fs=result.findings;if(!result.current.length&&!session.imports.length&&!fs.length)return emptyReview();
+ if(FOU&&FOU.ordered()){const html=FOU.list(session,result,rows,findingRow,{filter,search,selected});if(html)return html;}
+ else if(rows.length)return rows.slice(0,200).map(f=>findingRow(f)+(FOU?FOU.carryFor(session,result,f):'')).join('');
+ return `<div class="empty"><div class="emptyicon">${icon('checkmark')}</div><h2>${fs.length?'条件に一致する候補がありません':'抽出条件に該当する候補はありません'}</h2><p>読み込んだ範囲と現在のルールでの結果です。資料未読込・手動確認の項目はチェックシートに残っています。</p><button class="btn" data-view="check">チェックシートを確認</button></div>`;
+}
 function reviewPage(){
  const fs=result.findings,open=fs.filter(f=>decision(f.id).status==='open').length,manual=result.coverage.filter(c=>!c.disabled&&(c.state==='手動確認'||c.state==='資料未読込')).length,matched=result.coverage.filter(c=>!c.disabled&&!['手動確認','資料未読込'].includes(c.state)).length,total=result.coverage.filter(c=>!c.disabled).length;
- const rows=fs.filter(f=>(filter==='all'||filter==='open'&&decision(f.id).status==='open'||filter==='difference'&&f.level==='difference'||filter==='info'&&f.level==='info')&&(!search||`${f.title} ${f.reason} ${E.CHECKS.find(c=>c.key===f.check)?.title} ${(f.why?.tags||[]).join(' ')}`.includes(search)));
- return heading('REVIEW WORKSPACE','自計化レビュー','確認候補を見つけ、根拠を読んで、メモに残す。',`<button class="btn" data-action="backup">${icon('download')}バックアップ</button><button class="btn primary" data-view="data">${icon('plus')}資料を読み込む</button>`)+settings()+`<div class="stats"><div class="stat"><div class="statlabel">${icon('data')}対象の仕訳行</div><div class="statvalue">${result.current.length.toLocaleString()}<small>行</small></div><div class="statnote">${session.project.start} — ${session.project.end}</div></div><div class="stat gold"><div class="statlabel">${icon('review')}未確認の候補</div><div class="statvalue">${open}<small>件</small></div><div class="statnote">候補数 ≠ 誤りの数</div></div><div class="stat"><div class="statlabel">${icon('check')}抽出を実行した項目</div><div class="statvalue">${matched}<small>/ ${total}</small></div><div class="statnote">実施数 ≠ 正しさの保証</div></div><div class="stat"><div class="statlabel">${icon('book')}資料・手動確認が必要</div><div class="statvalue">${manual}<small>項目</small></div><div class="statnote">チェックシートで確認状況を記録</div></div></div>${!session.project.complete&&result.current.length?'<div class="notice">このCSVの網羅性は未指定です。貸借差額は読込内容の確認として表示し、欠落月の検出は停止中。 <button class="btn small" data-view="data">資料の設定を確認</button></div>':''}<div class="reviewgrid"><section class="panel"><div class="panelhead"><h2>確認キュー</h2><span class="small">${fs.length}件の候補</span></div><div class="filters">${[['all','すべて'],['open','未確認'],['difference','残高・金額差'],['info','ヒント・資料確認']].map(([k,t])=>`<button class="chip ${filter===k?'active':''}" data-filter="${k}">${t}</button>`).join('')}<input id="search" class="search" placeholder="科目・取引先で検索" aria-label="確認候補を検索" value="${esc(search)}"></div><div id="findingList">${!result.current.length&&!session.imports.length&&!fs.length?emptyReview():rows.length?rows.slice(0,200).map(findingRow).join(''):`<div class="empty"><div class="emptyicon">${icon('checkmark')}</div><h2>${fs.length?'条件に一致する候補がありません':'抽出条件に該当する候補はありません'}</h2><p>読み込んだ範囲と現在のルールでの結果です。資料未読込・手動確認の項目はチェックシートに残っています。</p><button class="btn" data-view="check">チェックシートを確認</button></div>`}</div><div class="review-footer">表示は最大200件。抽出・メモ出力は全候補が対象。税区分の全件判定は含みません。</div></section><aside id="teacherPanel" class="panel teacher">${teacherPanel()}</aside></div><section class="panel coverage"><div class="panelhead"><h2>チェックの見通し</h2><button class="btn small" data-view="check">全項目を確認</button></div><div class="tablewrap"><table class="datatable"><thead><tr><th>項目</th><th>実行状況</th><th>追加で必要な資料</th></tr></thead><tbody>${result.coverage.filter(c=>!c.disabled).slice(0,7).map(c=>`<tr><td><span class="checkcode">${c.code}</span><br>${c.title}</td><td><span class="badge ${c.count?'warn':''}">${c.state}</span></td><td>${c.needs}</td></tr>`).join('')}</tbody></table></div></section>`;
+ const rows=queueRows(),hasData=result.current.length||session.imports.length||fs.length;
+ // 資料を読み直したあとの比較（消えた論点）。保存は次の保存操作にまかせる
+ if(FO&&hasData)FO.reconcile(session,FO.build(session,result));
+ return heading('REVIEW WORKSPACE','自計化レビュー','確認候補を見つけ、根拠を読んで、メモに残す。',`<button class="btn" data-action="backup">${icon('download')}バックアップ</button><button class="btn primary" data-view="data">${icon('plus')}資料を読み込む</button>`)+settings()+`<div class="stats"><div class="stat"><div class="statlabel">${icon('data')}対象の仕訳行</div><div class="statvalue">${result.current.length.toLocaleString()}<small>行</small></div><div class="statnote">${session.project.start} — ${session.project.end}</div></div><div class="stat gold"><div class="statlabel">${icon('review')}未確認の候補</div><div class="statvalue">${open}<small>件</small></div><div class="statnote">候補数 ≠ 誤りの数</div></div><div class="stat"><div class="statlabel">${icon('check')}抽出を実行した項目</div><div class="statvalue">${matched}<small>/ ${total}</small></div><div class="statnote">実施数 ≠ 正しさの保証</div></div><div class="stat"><div class="statlabel">${icon('book')}資料・手動確認が必要</div><div class="statvalue">${manual}<small>項目</small></div><div class="statnote">チェックシートで確認状況を記録</div></div></div>${!session.project.complete&&result.current.length?'<div class="notice">このCSVの網羅性は未指定です。貸借差額は読込内容の確認として表示し、欠落月の検出は停止中。 <button class="btn small" data-view="data">資料の設定を確認</button></div>':''}${FOU&&hasData?FOU.header(session,result):''}<div class="reviewgrid"><section class="panel"><div class="panelhead"><h2>確認キュー</h2><span class="small">${fs.length}件の候補</span></div><div class="filters">${[['all','すべて'],['open','未確認'],['difference','残高・金額差'],['info','ヒント・資料確認']].map(([k,t])=>`<button class="chip ${filter===k?'active':''}" data-filter="${k}">${t}</button>`).join('')}${FOU&&hasData?FOU.toggle():''}<input id="search" class="search" placeholder="科目・取引先で検索" aria-label="確認候補を検索" value="${esc(search)}"></div><div id="findingList">${queueList(rows)}</div><div class="review-footer">表示は最大200件（順番どおりのときは200項目）。抽出・メモ出力は全候補が対象。税区分の全件判定は含みません。</div></section><aside id="teacherPanel" class="panel teacher">${teacherPanel()}</aside></div><section class="panel coverage"><div class="panelhead"><h2>チェックの見通し</h2><button class="btn small" data-view="check">全項目を確認</button></div><div class="tablewrap"><table class="datatable"><thead><tr><th>項目</th><th>実行状況</th><th>追加で必要な資料</th></tr></thead><tbody>${result.coverage.filter(c=>!c.disabled).slice(0,7).map(c=>`<tr><td><span class="checkcode">${c.code}</span><br>${c.title}</td><td><span class="badge ${c.count?'warn':''}">${c.state}</span></td><td>${c.needs}</td></tr>`).join('')}</tbody></table></div></section>`;
 }
 function emptyReview(){return `<div class="empty"><div class="emptyicon">${icon('upload')}</div><h2>仕訳帳CSVから始めよう</h2><p>一度読み込むと、重複候補・高額支出・月次変動・私的支出の候補をまとめて確認できます。</p><div class="actions"><button class="btn primary" data-action="import" data-type="current">${icon('upload')}CSVを読み込む</button><button class="btn" data-action="demo">操作サンプルを試す</button></div><p class="tinyline">全処理は端末内。freeeへの接続・自動修正は行いません。</p></div>`;}
-function findingRow(f){const c=E.CHECKS.find(c=>c.key===f.check),d=decision(f.id);return `<button class="finding ${selected===f.id?'selected':''}" data-finding="${f.id}"><span class="flag ${f.level==='difference'?'diff':f.level==='info'?'info':''}">${f.level==='difference'?'≠':f.level==='info'?(f.dataReview?'?':'+'):'!'}</span><span class="findingbody"><span class="findingtitle">${esc(f.title)}</span><span class="findingmeta"><span>${c?.code||''} · ${c?.title||''}</span><span class="badge ${d.status==='resolved'?'ok':d.status==='ask'?'warn':''}">${decisionNames[d.status]||'未確認'}</span>${(f.why?.tags||[]).filter(t=>t!=='高額').slice(0,3).map(t=>`<span class="ftag">${esc(t)}</span>`).join('')}</span>${rowDates(f)?`<span class="finddates">${icon('calendar')}<span>${esc(rowDates(f))}${mainRow(f)?`<span class="findmain">${esc(mainRow(f))}</span>`:''}</span></span>`:''}<span class="findingtext">${esc(f.reason)}</span></span><span class="findingamount">${f.dataReview?'判定保留':money(f.amount)}<br><span class="small">${f.rows.length}行</span></span></button>`;}
+function findingRow(f,item){const c=E.CHECKS.find(c=>c.key===f.check),d=decision(f.id);return `<button class="finding ${selected===f.id?'selected':''}" data-finding="${f.id}"><span class="flag ${f.level==='difference'?'diff':f.level==='info'?'info':''}">${f.level==='difference'?'≠':f.level==='info'?(f.dataReview?'?':'+'):'!'}</span><span class="findingbody"><span class="findingtitle">${esc(f.title)}</span><span class="findingmeta">${item&&FOU?FOU.rowBadges(item):''}<span>${c?.code||''} · ${c?.title||''}</span><span class="badge ${d.status==='resolved'?'ok':d.status==='ask'?'warn':''}">${decisionNames[d.status]||'未確認'}</span>${(f.why?.tags||[]).filter(t=>t!=='高額').slice(0,3).map(t=>`<span class="ftag">${esc(t)}</span>`).join('')}</span>${rowDates(f)?`<span class="finddates">${icon('calendar')}<span>${esc(rowDates(f))}${mainRow(f)?`<span class="findmain">${esc(mainRow(f))}</span>`:''}</span></span>`:''}<span class="findingtext">${esc(f.reason)}</span></span><span class="findingamount">${f.dataReview?'判定保留':money(f.amount)}<br><span class="small">${f.rows.length}行</span></span></button>`;}
 function teacherPanel(){const f=result.findings.find(x=>x.id===selected);const header=`<div class="teacherhead"><div class="teacheravatar">L</div><div><h2>レビュー・ガイド</h2><div class="small">チェック理由と次の一手</div></div></div>`;if(!f)return header+`<div class="teacherbody"><p>左の確認候補を選ぶと、なぜ気になるのか、何を確認すれば判断できるかを説明します。</p><div class="teachsection"><h3>この先生の仕組み</h3><p>チェックシートと公開資料に基づくルールの解説です。外部AIの自由回答ではありません。</p></div></div>`;const d=decision(f.id),sources=f.sources.map(id=>E.SOURCES.find(s=>s.id===id)).filter(Boolean);return header+`<div class="teacherbody"><div class="badge ${f.level==='difference'?'red':f.level==='info'?'':'warn'}">${f.level==='difference'?'数値の差額を検出':f.level==='info'?(f.dataReview?'読込内容の確認':'効率化のヒント'):'確認候補・誤り未確定'}</div><h2 class="detailtitle" style="margin-top:11px">${esc(f.title)}</h2>${balanceSummary(f)}${window.ReviewVariance?window.ReviewVariance.findingHTML(f,session,result):''}${INS?INS.panel(f):''}<div class="teachsection"><h3>${f.why?'判断するときの注意':'なぜ気になる？'}</h3><p>${esc(f.lesson)}</p></div><div class="teachsection"><h3>次に確認すること</h3><ol class="steps">${f.steps.map(s=>`<li>${esc(s)}</li>`).join('')}</ol></div>${topRows(f)}<div class="teachsection"><h3>検出した明細</h3><div class="evidence">${esc(evidenceText(f,8))}${f.rows.length>8?`\n…ほか ${f.rows.length-8}行（全行をメモ出力）`:''}</div></div>${D.panel(f)}<div class="teachsection"><h3>抽出の根拠</h3><p class="small">${esc(f.basis)}</p>${sources.map(s=>s.url?`<a href="${s.url}" target="_blank" rel="noopener noreferrer" class="small">${esc(s.name)}</a><br>`:`<span class="small">${s.name}</span><br>`).join('')}${INS?INS.glossaryHTML(f):''}</div><label class="small" for="decisionStatus">確認状況</label><select id="decisionStatus">${Object.entries(decisionNames).map(([k,t])=>`<option value="${k}" ${d.status===k?'selected':''}>${t}</option>`).join('')}</select><label class="small" for="decisionNote" style="display:block;margin-top:10px">確認した事実・質問</label><textarea id="decisionNote" placeholder="例：3月分は4月に登録。契約書の月額と一致。">${esc(d.note)}</textarea><button class="btn primary" data-action="saveDecision">${icon('checkmark')}確認記録を保存</button><button class="btn" data-action="copyFinding">${icon('copy')}この候補のメモをコピー</button></div>`;}
 function evidenceText(f,limit=Infinity){return f.rows.slice(0,limit).map(r=>{if(r.statement)return `${r.date}｜${r.statement} ${r.account}\n${r.amount===null?'未読込':money(r.amount)}｜${r.source||''} ${r.line}行`;if(r.balance!==undefined)return `${r.date}｜${r.account} ${r.party||''}\n帳簿 ${money(r.balance)}${r.expected!==null?`／資料 ${money(r.expected)}`:''}｜元CSV ${r.line}行`;if(r.due)return `${r.date||'発生日なし'}｜${r.account} ${r.party||''}\n期日 ${r.due}｜未決済 ${money(r.amount)}｜基準日 ${r.asOf||session.financial.agingAsOf||'未確認'}｜元CSV ${r.line}行`;if(r.debit!==undefined)return `${r.date}｜仕訳 ${r.id}｜${r.party||r.debitParty||r.creditParty||'取引先なし'}\n${r.debit} ${money(r.debitAmount)} ／ ${r.credit} ${money(r.creditAmount)}\n${r.description||'摘要なし'}｜${r.source||''} ${r.line}行${D.evidenceText(r,r.side)?'\n'+D.evidenceText(r,r.side):''}`;return `${r.date}｜${r.description||r.party||'内容なし'}｜${money(r.amount)}｜元CSV ${r.line}行`;}).join('\n\n');}
 // ---- 資料の読込：基本の8ファイル（仕訳帳2つ＋月次BS・PLのタグ別）と、必要な分析だけの追加資料 ----
@@ -6562,7 +7093,7 @@ function bindSettings(){
 }
 function bindReview(){
  bindSettings();
- $('#search').addEventListener('input',e=>{search=e.target.value;const fs=result.findings.filter(f=>(filter==='all'||filter==='open'&&decision(f.id).status==='open'||filter==='difference'&&f.level==='difference'||filter==='info'&&f.level==='info')&&(!search||`${f.title} ${f.reason} ${E.CHECKS.find(c=>c.key===f.check)?.title} ${(f.why?.tags||[]).join(' ')}`.includes(search)));$('#findingList').innerHTML=fs.slice(0,200).map(findingRow).join('')||'<div class="empty">条件に一致する候補がありません</div>';});
+ $('#search').addEventListener('input',e=>{search=e.target.value;$('#findingList').innerHTML=queueList(queueRows());});
 }
 function bindDropzone(){const z=$('#dropzone');z.addEventListener('dragover',e=>{e.preventDefault();z.classList.add('drag');});z.addEventListener('dragleave',()=>z.classList.remove('drag'));z.addEventListener('drop',e=>{e.preventDefault();z.classList.remove('drag');forceType=null;queueFiles([...e.dataTransfer.files]);});z.addEventListener('keydown',e=>{if(e.target!==z)return;if(e.key==='Enter'||e.key===' '){e.preventDefault();chooseFiles(null);}});}
 function chooseFiles(type){const c=W.current(workspace);if(!c)return toast('会社一覧で対象の会社を選んでください');if(!c.entityType){showCompanyDialog(c.id);return toast('読込前に個人／法人の区分を設定してください');}forceType=type||null;importCompanyId=c.id;$('#fileInput').value='';$('#fileInput').click();}
@@ -6635,7 +7166,8 @@ function tagVariantNotice(p,preview){
  const T=window.ReviewTagReports;if(!T||!E.reportType(p.type)||!preview.items.length)return '';
  const pl=T.plan(session,p.type,preview.items,{mode:p.mode}),label=pl.dim?T.DIMS[pl.dim]:'',out=[];
  const others=T.materials(session).find(m=>m.type===p.type)?.dims.filter(d=>d.loaded&&d.dim!==pl.dim).map(d=>d.label)||[];
- out.push(pl.dim?`<strong>表示するタグ：${esc(label)}</strong>　${esc(label)}別の内訳 ${pl.details.toLocaleString()}行（${pl.detailAccounts}科目）と、科目合計 ${pl.parents.toLocaleString()}行を分けて保存します。内訳は科目合計に足しません。`:`<strong>表示するタグ：なし</strong>　科目合計 ${pl.parents.toLocaleString()}行を保存します。`);
+ const tc=preview.reportStats?.tagCheck,tags=new Set(preview.items.filter(r=>r.tagDimension).map(r=>String(r.tagValue).replace(/\s/g,''))).size;
+ out.push(pl.dim?`<strong>表示するタグ：${esc(label)}</strong>　${esc(label)}別の内訳 ${pl.details.toLocaleString()}行（${pl.detailAccounts}科目・${tags}件）と、科目合計 ${pl.parents.toLocaleString()}行を分けて保存します。内訳は科目合計に足しません。${tc?.checked?`内訳の合計は ${tc.checked}科目すべての月で科目合計と照合しました${tc.dropped?.length?'（合わない科目を除く）':''}。`:''}${pl.dim==='party'&&E.reportType(p.type)==='monthlyBS'?'取引先別の残高は確定した残高として、回収・支払の確認に使います。':''}`:`<strong>表示するタグ：なし</strong>　科目合計 ${pl.parents.toLocaleString()}行を保存します。`);
  if(p.mode==='replace')out.push(others.length?`読込済みの ${esc(others.join('・'))}別 の内訳は残します（置き換えるのは${pl.dim?'同じ「'+esc(label)+'別」':'科目合計'}だけです）。`:'');
  if(pl.conflicts.length){const c=pl.conflicts[0];out.push(`読込済みの帳票と科目合計が ${pl.conflicts.length}か所 違います（例：${esc(c.account)} ${esc(c.date)} ${money(c.old)} → ${money(c.new)}）。この帳票の値を使います。freeeの出力時点が違う可能性があります。`);}
  if(pl.droppedAccounts.length)out.push(`読込済みの帳票にあってこの帳票にない科目（${esc(pl.droppedAccounts.slice(0,4).join('・'))}${pl.droppedAccounts.length>4?' ほか':''}）は、0円でないため外します。`);
@@ -6720,7 +7252,16 @@ document.addEventListener('click',async e=>{const el=e.target.closest('button');
  if(a==='copyTeacher'){if(!session.teacher.turns.length)return toast('回答記録がまだありません');copy(teacherText());}
  if(a==='import')chooseFiles(el.dataset.type);if(a==='backup')backup();if(a==='restore'){$('#restoreInput').value='';$('#restoreInput').click();}
  if(a==='demo')confirmAction('操作サンプルを開く','架空の仕訳と残高を、独立したサンプル会社として追加します。',loadDemoCompany);
- if(a==='saveDecision'){if(!selected)return;const note=$('#decisionNote').value,status=$('#decisionStatus').value;if(status==='resolved'&&!note.trim())return toast('確認済みにする場合は、確認した根拠を記録してください');session.decisions[selected]={status,note,reviewLabel:result.findings.find(f=>f.id===selected)?.title||selected,reviewPeriod:session.project.start+'〜'+session.project.end};save();render();toast('確認記録を保存しました');}
+ if(a==='saveDecision'){if(!selected)return;const note=$('#decisionNote').value,status=$('#decisionStatus').value;if(status==='resolved'&&!note.trim())return toast('確認済みにする場合は、確認した根拠を記録してください');const f=result.findings.find(f=>f.id===selected);session.decisions[selected]={status,note,reviewLabel:f?.title||selected,reviewPeriod:session.project.start+'〜'+session.project.end,...(FO&&f?{topic:FO.topicKey(f)}:{}),at:new Date().toISOString()};save();render();toast('確認記録を保存しました');}
+ if(FOU&&a&&a.startsWith('fo')){const k=el.dataset.kind;
+  if(a==='foToggle'){FOU.setOrdered(!FOU.ordered());render();}
+  else if(a==='foStage'){if(!FOU.ordered())FOU.setOrdered(true);render();if(!FOU.scrollToStage(el.dataset.stage))toast('この段階の項目は、いまの絞り込み・検索では表示されていません');}
+  else if(a==='foUsePrev'){const n=FO.usePrevious(session,result,el.dataset.topic);if(n){save();render();toast(`前回の判断を ${n}件に引き継ぎました`);}}
+  else if(a==='foClearGone'){if(FO.clearGone(session)){save();render();}}
+  else if(a==='foCopy')copy(FOU.exportText(k,session,result));
+  else if(a==='foCsv')download(FOU.fileName(k,session),FOU.exportCSV(k,session,result),'text/csv;charset=utf-8');
+  else if(a==='foPrint')FOU.print(k,session,result);
+  return;}
  if(a==='copyFinding'){const f=result.findings.find(x=>x.id===selected);if(f)copy(memoFor(f));}
  if(a==='copyConsult'){const f=result.findings.find(x=>x.id===selected);if(f)copy('自計化チェックの相談です。修正仕訳は作らず、確認すべき事実と資料、判断を保留すべき点を説明してください。次の記録はルールによる確認候補で、誤りは確定していません。\n\n'+memoFor(f));}
  if(a==='copyAll')copy($('#memoText').value);if(a==='downloadMemo')download('自計化チェック_引継ぎメモ.txt',$('#memoText').value);

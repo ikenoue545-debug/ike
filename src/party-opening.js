@@ -241,12 +241,20 @@ function build(session,model){
    }
    if(strict&&p.openingBasis==='estimate'){const q=strict.parties.get(p.party);p.openingWithoutMatching=q?q.opening??0:0;}
   }
+  // 当期の仕訳を読めず、取引先内訳つきBSがある科目：期首・残高ともBSの値を使う（仕訳での繰越はしない。動きは分からない）
+  const bsOnly=!through&&override.size>0;let bsThrough=null;
+  if(bsOnly){
+   for(const m of months)if(S.reportCell(session,'monthlyBS',account,m).amount!==null)bsThrough=m;
+   for(const p of parties){p.increase=null;p.decrease=null;p.openItems=[];p.currentEvents=0;p.closing=p.openingBasis==='exact'&&bsThrough?S.reportCell(session,'monthlyBS',account,bsThrough,p.party).amount:null;}
+  }
+  const estimated=parties.some(p=>p.openingBasis==='estimate');
   const estimatedTotal=win.start||override.size?total(parties.map(p=>p.opening||0)):null;
   const residual=finite(rep.amount)&&finite(estimatedTotal)&&(win.start||override.size&&parties.every(p=>p.openingBasis==='exact'))?rep.amount-estimatedTotal:null;
   // 期首が分からない取引先が残る（読込範囲がなく、確定値でない取引先がある）ときは照合しない
   const allExact=!!override.size&&parties.every(p=>p.openingBasis==='exact');
-  const status=rep.source==='conflict'?'opening_unconfirmed':!win.start&&!allExact?(priorRows?'gap':'no_history'):untaggedDominant?'untagged':rep.amount===null||residual===null?'no_report':Math.abs(residual)<1?'matched':residual>0?'unexplained':'over';
-  const closingReport=through?S.reportCell(session,'monthlyBS',account,through):{amount:null};
+  // exact：期首はすべて取引先内訳つきBSの確定値（推定なし）／bs_only：当期の仕訳がなく、期首・残高ともBSの値
+  const status=rep.source==='conflict'?'opening_unconfirmed':bsOnly?'bs_only':!win.start&&!allExact?(priorRows?'gap':'no_history'):untaggedDominant?'untagged':rep.amount===null||residual===null?'no_report':!estimated?'exact':Math.abs(residual)<1?'matched':residual>0?'unexplained':'over';
+  const closingMonth=through||bsThrough,closingReport=closingMonth?S.reportCell(session,'monthlyBS',account,closingMonth):{amount:null};
   const closingKnown=parties.every(p=>p.closing!==null),closingTotal=closingKnown?total(parties.map(p=>p.closing||0)):null;
   const closingResidual=closingReport.amount!==null&&finite(closingTotal)&&finite(residual)?closingReport.amount-closingTotal-residual:null;
   const periodIncrease=total(parties.map(p=>p.increase)),span=through?days(start+'-01',endDay(through))+1:null;
@@ -255,7 +263,7 @@ function build(session,model){
   ranked.forEach((p,i)=>{p.share=periodIncrease?p.increase/periodIncrease:0;if(acc<periodIncrease*0.8&&i<5){p.major=true;acc+=p.increase;}});
   const cls=new Map();
   for(const p of parties){
-   let c=p.opening===null||p.closing===null?{status:'unknown',label:w.unknown}:untaggedDominant&&p.openingBasis!=='exact'?{status:'unknown',label:w.unknown}:asOf?classify(p,kind,asOf):{status:'unknown',label:w.unknown};
+   let c=p.opening===null||p.closing===null?{status:'unknown',label:w.unknown}:bsOnly?(p.closing===0?{status:'settled',label:w.settled}:{status:'unknown',label:'仕訳が未読込'}):untaggedDominant&&p.openingBasis!=='exact'?{status:'unknown',label:w.unknown}:asOf?classify(p,kind,asOf):{status:'unknown',label:w.unknown};
    // 未選択は取引先ではないので、回収・支払の遅れは判定しない（残高なし・マイナスだけ示す）
    if(p.untagged&&!['settled','credit'].includes(c.status))c={status:'unknown',label:w.unknown};
    cls.set(p,c);
@@ -283,7 +291,7 @@ function build(session,model){
    const c=cls.get(p);
    p.status=c.status;p.statusLabel=c.label;
    p.daysOfVolume=span&&p.increase>0&&p.closing>0?Math.round(p.closing/(p.increase/span)):null;
-   if(p.openingBasis==='exact')p.reasons.unshift(`期首は取引先内訳つきBSの確定値です（${String(p.exactSource||'').includes('journal')?'前の時点のBS内訳から連続する仕訳で繰り越した値':'BS内訳'}）。`);
+   if(p.openingBasis==='exact')p.reasons.unshift(bsOnly?`期首と残高（${bsThrough||'—'}末）は取引先内訳つきBSの値です。当期の仕訳帳が未読込のため、${w.inc}と${w.dec}の動きは分かりません。`:`期首は取引先内訳つきBSの確定値です（${String(p.exactSource||'').includes('journal')?'前の時点のBS内訳から連続する仕訳で繰り越した値':'BS内訳'}）。`);
    if(p.openingBasis==='none')p.reasons.unshift('期首の前月まで連続した過去の仕訳がないため、期首と残高は分かりません。当期の請求・入金だけを表示しています。');
    if(p.preWindow>0)p.reasons.push(`読込範囲（${win.start}〜）で、それより前の${w.inc}の分とみなした${w.dec}があります（${yen(p.preWindow)}円）。`);
    if(p.matchedIn.length)p.reasons.push(`取引先が未選択の${w.dec}${p.matchedIn.length}件を、金額が一致するこの取引先の${w.open}に当てています（候補）。`);
@@ -305,23 +313,27 @@ function build(session,model){
    no_history:'過去の仕訳帳が未読込のため、取引先別の期首は推定できません。当期の請求・入金だけを表示しています。',
    gap:`期首の前月（${prev}）まで連続した過去の仕訳がないため、取引先別の期首は推定できません。${win.stopReason||''}`,
    untagged:`${w.dec}の約${Math.round(untaggedShare*100)}%に取引先が付いていないため（カード払いの${account}など）、取引先別の状態は判定しません。金額は参考に表示します。`,
-   no_report:'BSの期首が未読込のため、推定の合計を帳票と照合できません。',
+   no_report:estimated?'BSの期首が未読込のため、推定の合計を帳票と照合できません。':'BSの期首が未読込のため、取引先別の期首の合計を帳票と照合できません。',
+   exact:`取引先別の期首は、すべて取引先内訳つきBSの確定値です（推定はしていません）。当期の仕訳で${through||'—'}末まで繰り越しています。${finite(residual)&&residual!==0?`BSの期首との差 ${yen(residual)}円は内訳不明です。`:''}`,
+   bs_only:`取引先別の期首と残高（${bsThrough||'—'}末）は、取引先内訳つきBSの値です（推定はしていません）。当期の仕訳帳を読み込むと、${w.inc}と${w.dec}の動きと、${w.act}が止まっていないかを確認できます。${finite(residual)&&residual!==0?`BSの期首との差 ${yen(residual)}円は内訳不明です。`:''}`,
    matched:'推定の合計がBSの期首と一致しました。読込範囲より前の残高は残っていないとみなした推定で、合計の一致は取引先別の内訳の証明ではありません。',
    unexplained:`推定の合計がBSの期首より ${finite(residual)?yen(residual):''}円少なく、その分は内訳不明です。読込範囲（${win.start}〜）より前からの残高、または読み込んでいない仕訳がある可能性があります。`,
    over:`推定の合計がBSの期首より ${finite(residual)?yen(-residual):''}円多くなっています。前受・過入金、取引先の付け違い、未選択の${w.dec}、期首の推定の誤りを確認してください。`
   }[status];
   const assumed=sim.matches.length>0;
   parties.sort((a,b)=>(SEVERITY[a.status]??9)-(SEVERITY[b.status]??9)||Math.abs(b.closing||0)-Math.abs(a.closing||0)||a.label.localeCompare(b.label,'ja'));
-  accounts.push({account,kind,words:w,reportedOpening:rep.amount,openingSource:rep.source,openingReasons:rep.reasons,estimatedTotal,residual,status,statusText,window:win,through,asOf,observedStop:obs.stop,observedStopReason:obs.reason,parties,matches:sim.matches,
+  accounts.push({account,kind,words:w,mode:bsOnly?'bs':through?'journal':'none',estimated,bsThrough,openingMonth:prev,reportedOpening:rep.amount,openingSource:rep.source,openingReasons:rep.reasons,estimatedTotal,residual,status,statusText,window:win,through,asOf,observedStop:obs.stop,observedStopReason:obs.reason,parties,matches:sim.matches,
    reportedClosing:closingReport.amount,closingTotal,closingResidual,periodIncrease,untaggedShare,untaggedDominant,exactCount:override.size,held,heldAmount,heldText,
-   confidence:status==='matched'&&win.months>=6&&!assumed?'高':['matched','unexplained'].includes(status)&&win.months>=3?'中':'低'});
+   confidence:['exact','bs_only'].includes(status)?(assumed?'中':'高'):status==='matched'&&win.months>=6&&!assumed?'高':['matched','unexplained'].includes(status)&&win.months>=3?'中':'低'});
  }
- if(!win0.start)notes.push(priorRows?`期首の前月（${prev}）まで連続した過去の仕訳がありません。${win0.stopReason||''}`:'過去の仕訳帳を「前期・過去の仕訳帳（複数年）」として読み込むと、取引先別の期首を推定できます。');
- if(!obs0.through)notes.push(`当期の仕訳を期首月から連続して読めないため、残高と状態は判定しません。${obs0.stop?obs0.stop+'：'+obs0.reason:''}`);
- else if(obs0.stop)notes.push(`残高は ${obs0.through} 末までです（${obs0.stop} の仕訳を読めないため：${obs0.reason}）。`);
- for(const a of accounts)if(a.window.start!==win0.start||a.through!==obs0.through)notes.push(`${a.account}は、この科目に触れる仕訳に金額・借貸の誤りがあるため、読込範囲が ${a.window.start||'—'}〜${a.window.end||'—'}、残高が ${a.through||'—'} 末までです。`);
+ // 期首の分からない取引先があるときだけ、過去の仕訳帳の読込を案内する（取引先内訳つきBSで全社の期首が分かれば不要）
+ const noCurrent=!(session.datasets?.current||[]).length,needHistory=accounts.some(a=>a.parties.some(p=>p.openingBasis==='none'));
+ if(!win0.start&&needHistory)notes.push(priorRows?`期首の前月（${prev}）まで連続した過去の仕訳がありません。${win0.stopReason||''}`:'過去の仕訳帳を「前期・過去の仕訳帳（複数年）」として読み込むと、取引先別の期首を推定できます。');
+ if(!noCurrent&&!obs0.through)notes.push(`当期の仕訳を期首月から連続して読めないため、${accounts.some(a=>a.mode==='bs')?'取引先内訳つきBSのない科目の':''}残高と状態は判定しません。${obs0.stop?obs0.stop+'：'+obs0.reason:''}`);
+ else if(!noCurrent&&obs0.stop)notes.push(`残高は ${obs0.through} 末までです（${obs0.stop} の仕訳を読めないため：${obs0.reason}）。`);
+ for(const a of accounts)if(!noCurrent&&(a.window.start!==win0.start||a.through!==obs0.through))notes.push(`${a.account}は、この科目に触れる仕訳に金額・借貸の誤りがあるため、読込範囲が ${a.window.start||'—'}〜${a.window.end||'—'}、残高が ${a.through||'—'} 末までです。`);
  alerts.sort((a,b)=>(SEVERITY[a.status]-SEVERITY[b.status])||b.amount-a.amount);
- return {version:1,prev,start,end,through:obs0.through,asOf:obs0.through?endDay(obs0.through):null,window:win0,accounts,alerts,notes};
+ return {version:2,prev,start,end,journals:!noCurrent,partyBS:accounts.some(a=>a.exactCount>0),estimated:accounts.some(a=>a.estimated),through:obs0.through,asOf:obs0.through?endDay(obs0.through):null,window:win0,accounts,alerts,notes};
 }
 
 // 月次BSの内訳（取引先別）に使う：取引先 → 推定・確定期首、当期の金額一致による付け替え、未配賦の差
@@ -347,10 +359,10 @@ function addFindings(model,session,add){
     lesson:`取引先が未選択の${a.words.dec}は、どの取引先の分か仕訳から分かりません。取引先を付けると、${a.words.act}の状況を取引先ごとに確認できます。`,
     steps:[`取引先が未選択の${a.words.dec}を、通帳・明細で相手を確認する。`,'freeeで取引先を付け、もう一度読み込む。'],sources:['monthly','freee']});}
   const xs=po.alerts.filter(x=>key(x.account)===key(a.account));if(!xs.length)continue;
-  const w=a.words,rows=uniq(xs.flatMap(x=>x.rows||[])),weak=a.status!=='matched'||a.confidence==='低';
-  add('monthly',`${a.account}：${a.kind==='receipt'?'回収':'支払'}が止まっている可能性のある取引先（${xs.length}先・過去の仕訳からの推定）`,xs.map(x=>x.text.replace(/^[^／]*／/,'')).join('／'),xs.reduce((n,x)=>n+x.amount,0),rows,{level:weak?'info':'candidate',dataReview:weak,monthlyCheck:true,partyOpeningCheck:true,account:a.account,months:uniq(rows.map(r=>month(r.date)).filter(Boolean)),reviewContext:'party-opening:'+JSON.stringify([a.account,a.status,xs.map(x=>[x.party,x.amount,x.oldestDate])]),
-   basis:`過去の仕訳（${a.window.start||'—'}〜${a.window.end||'—'}）と当期の仕訳を取引先ごとに消し込んだ推定。推定の確からしさ ${a.confidence}（${a.statusText}）`,
-   lesson:`取引先別の期首は推定です。${w.open}が残って見えるのは、実際の${a.kind==='receipt'?'未回収':'未払'}のほか、取引先の付け違い・相殺・値引・貸倒・別科目での処理でも起こります。延滞や期日超過を確定するものではありません。請求書・通帳・取引先への確認で事実を確かめます。`,
+  const w=a.words,rows=uniq(xs.flatMap(x=>x.rows||[])),weak=!['matched','exact'].includes(a.status)||a.confidence==='低';
+  add('monthly',`${a.account}：${a.kind==='receipt'?'回収':'支払'}が止まっている可能性のある取引先（${xs.length}先・${a.estimated?'過去の仕訳からの推定':'取引先内訳つきBSの期首から'}）`,xs.map(x=>x.text.replace(/^[^／]*／/,'')).join('／'),xs.reduce((n,x)=>n+x.amount,0),rows,{level:weak?'info':'candidate',dataReview:weak,monthlyCheck:true,partyOpeningCheck:true,account:a.account,months:uniq(rows.map(r=>month(r.date)).filter(Boolean)),reviewContext:'party-opening:'+JSON.stringify([a.account,a.status,xs.map(x=>[x.party,x.amount,x.oldestDate])]),
+   basis:a.estimated?`過去の仕訳（${a.window.start||'—'}〜${a.window.end||'—'}）と当期の仕訳を取引先ごとに消し込んだ推定。推定の確からしさ ${a.confidence}（${a.statusText}）`:`取引先内訳つきBSの期首（確定値）を当期の仕訳で繰り越し、取引先ごとに消し込んだ結果（${a.statusText}）`,
+   lesson:`取引先別の期首は${a.estimated?'推定です':'取引先内訳つきBSの確定値ですが、その後の消込は仕訳からの推測です'}。${w.open}が残って見えるのは、実際の${a.kind==='receipt'?'未回収':'未払'}のほか、取引先の付け違い・相殺・値引・貸倒・別科目での処理でも起こります。延滞や期日超過を確定するものではありません。請求書・通帳・取引先への確認で事実を確かめます。`,
    steps:[`対象の取引先の${w.inc}と${w.dec}の仕訳を、元帳・請求書・通帳で照合する。`,`${a.kind==='receipt'?'入金予定・督促の状況・貸倒の要否':'支払予定・請求書の受領・相殺の有無'}をお客様に確認する。`,'取引先の付け忘れ・付け違いがあればfreeeで修正し、確認結果をメモに残す。'],sources:['monthly','freee']});
  }
 }

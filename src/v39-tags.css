@@ -1,1 +1,80 @@
-/* v39-tags */
+/* v39-tags：取引先・品目・部門別の帳票（タグ別の月次PL・BS） */
+.ta-panel .panelbody{display:flex;flex-direction:column;gap:18px;min-width:0}
+.ta-panel .notice{margin:0}
+.ta-panel .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.ta-block{min-width:0}
+.ta-block>h3{font-size:15px;margin:0 0 10px}
+.ta-sub{margin-top:14px;min-width:0}
+.ta-sub h4{font-size:13.5px;margin:0 0 8px}
+.ta-table th,.ta-table td{padding:8px 11px;font-size:12.5px;vertical-align:top}
+.ta-table th[scope=row]{white-space:normal;min-width:120px;overflow-wrap:anywhere}
+.ta-materials td{min-width:120px}
+.ta-materials td .badge{margin-top:4px}
+.ta-file{display:block;font-size:11px;color:var(--muted);overflow-wrap:anywhere;margin-top:2px}
+.ta-yes{color:var(--green);font-weight:700}
+.ta-no{color:var(--muted)}
+.ta-act{text-align:right;white-space:nowrap}
+.ta-howto{margin-top:10px}
+.ta-howto summary,.ta-lazy>summary{cursor:pointer;font-size:12.5px}
+.ta-howto ol{margin:8px 0 0;padding-left:20px;line-height:1.8}
+.ta-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.ta-tab{border:1px solid var(--line);background:var(--white);color:var(--ink);border-radius:99px;padding:6px 14px;font:inherit;font-size:13px;cursor:pointer}
+.ta-tab[aria-selected=true]{background:color-mix(in srgb,var(--green) 16%,var(--white));border-color:var(--green);color:var(--ink);font-weight:700}
+.ta-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin:0 0 10px}
+.ta-stat{border:1px solid var(--line);border-radius:8px;padding:8px 11px;display:flex;flex-direction:column;min-width:0}
+.ta-stat span{font-size:11px;color:var(--muted)}
+.ta-stat strong,.ta-stat strong .ts-money{font-size:17px;font-variant-numeric:tabular-nums}
+.ta-stat small{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.ta-bars{list-style:none;margin:6px 0 10px;padding:0;display:flex;flex-direction:column;gap:5px}
+.ta-bars li{display:grid;grid-template-columns:minmax(90px,200px) 1fr auto;align-items:center;gap:10px;font-size:12.5px;min-width:0}
+.ta-barname{overflow-wrap:anywhere}
+.ta-bar{height:10px;border-radius:5px;background:color-mix(in srgb,var(--green) 55%,transparent);width:var(--w);min-width:2px}
+.ta-barval{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.ta-barval small{margin-left:6px;color:var(--muted)}
+.ta-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px 20px}
+.ta-list{margin:0;padding-left:18px;font-size:12.5px;line-height:1.75}
+.ta-searchrow{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.ta-searchrow h4{margin:0}
+.ta-search input{width:min(260px,100%);padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--white);color:var(--ink);font:inherit;font-size:13px}
+.ta-search{max-width:100%}
+.ta-acct{border-top:1px solid var(--line);padding:8px 2px}
+.ta-acct>summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.ta-acct>summary::-webkit-details-marker{display:none}
+.ta-acct>summary::before{content:'▶';font-size:10px;color:var(--muted);transition:transform var(--motion-fast,160ms)}
+.ta-acct[open]>summary::before{transform:rotate(90deg)}
+.ta-acctname{font-weight:600}
+.ta-acctnum{font-variant-numeric:tabular-nums;margin-left:auto}
+.ta-lazybody{margin-top:6px;min-width:0}
+.ta-unsel th,.ta-unsel td{color:var(--muted)}
+.ta-total th,.ta-total td{font-weight:700;border-top:2px solid var(--line)}
+.ta-pager{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0 0}
+.ta-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;margin-bottom:10px}
+.ta-card{display:flex;flex-direction:column;gap:4px;border:1px solid var(--line);border-left:4px solid var(--amber);border-radius:10px;padding:11px 13px;background:var(--white);min-width:0}
+.ta-card.ta-negative{border-left-color:var(--red)}
+.ta-cardtop{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.ta-card strong{font-size:15px;overflow-wrap:anywhere}
+.ta-cardamt{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.ta-card p{margin:0;line-height:1.65;overflow-wrap:anywhere}
+.ta-more{margin-top:4px}
+.ta-class{margin-top:8px}
+.ta-grid th,.ta-grid td{padding:6px 9px;font-size:12px}
+.ta-findings{list-style:none;margin:0;padding:0}
+.ta-findings li{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+.ta-ftitle{flex:1 1 260px;min-width:0;overflow-wrap:anywhere}
+/* スマホ：表は行ごとのカードにする（月ごとの表 ta-grid は横にスクロール） */
+@media(max-width:680px){
+.ta-panel .tablewrap:has(>.ta-table){overflow:visible}
+.ta-table{display:block;width:100%;min-width:0}.ta-table>thead{display:none}.ta-table>tbody{display:block}
+.ta-table>tbody>tr{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px 14px;padding:10px 4px;border-bottom:1px solid var(--line)}
+.ta-table>tbody>tr>th[scope=row]{grid-column:1/-1;min-width:0;padding:0;border:0;background:none}
+.ta-table>tbody>tr>td{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:0;border:0;text-align:left;min-width:0}
+.ta-table>tbody>tr>td[data-label]::before{content:attr(data-label);font-size:11px;color:var(--muted)}
+.ta-table>tbody>tr>td.ta-act{grid-column:1/-1;align-items:stretch}
+.ta-materials td{min-width:0}
+.ta-bars li{grid-template-columns:minmax(70px,38%) 1fr;row-gap:2px}
+.ta-barval{grid-column:1/-1;text-align:left}
+.ta-stats{grid-template-columns:1fr 1fr}
+.ta-acctnum{margin-left:0}
+.ta-search,.ta-search input{width:100%}
+}
+@media print{.ta-panel .tablewrap{overflow:visible!important;max-height:none!important}.ta-tabs,.ta-pager,.ta-panel [data-ta-export],.ta-act,.ta-findings .btn{display:none!important}}

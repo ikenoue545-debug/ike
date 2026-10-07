@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """土台（base/ の v3.6 単一HTML）に src/ の変更を組み込み、dist/ に配布用の1ファイルを作る。
 
-  python3 build.py            # dist/自計化レビュー_v3.6.html を作る
+  python3 build.py            # dist/自計化レビュー_v3.7.html を作る
   python3 build.py --check    # src/ を変更していなければ base と同じになることを確かめる
 
 - src/ の既存モジュール（tools/blocks.py の MODULES）は、base の同じ <script> ブロックと置き換える。
@@ -16,15 +16,27 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from blocks import MODULES, find_block  # noqa: E402
 
 BASE = ROOT / 'base' / 'jikeika-review-v3.6.html'
-OUT = ROOT / 'dist' / '自計化レビュー_v3.6.html'
-VERSION = '3.6.0'
+OUT = ROOT / 'dist' / '自計化レビュー_v3.7.html'
+VERSION = '3.7.0'
 
 # (src のファイル, このブロックの直後に置く目印)
-NEW_SCRIPTS = []
+NEW_SCRIPTS = [
+    ('party-opening.js', 'root.ReviewTreasuryFindings='),
+    ('party-opening-ui.js', 'root.ReviewTreasuryUI='),
+    ('monthly-toc.js', 'root.ReviewPartyOpeningUI='),
+]
 # 追加のスタイル（最初の <style> の末尾に足す）
-STYLES = []
+STYLES = ['v37.css']
 # (説明, 元の文字列, 新しい文字列)
-PATCHES = []
+PATCHES = [
+    ('version label', '<span class="version">MULTI-COMPANY · 3.6.0</span>', f'<span class="version">MULTI-COMPANY · {VERSION}</span>'),
+    # 使い方（2.5）：目次と、取引先別の期首推定の説明を足す
+    ('help: toc', '<li>会社を選び、月次PL・BS画面で対象期間を設定。</li>',
+     '<li>会社を選び、月次PL・BS画面で対象期間を設定。画面上の「目次」（メニューの下に固定）を押すと、数値照合・資金・取引先別の残高・大きな変動・月次PL・月次BSなどの欄へすぐ移動できます。いま見ている欄は目次で色が変わります。</li>'),
+    ('help: party estimate', '売掛金の参考推計は明示的に選んだ場合だけ表示し、BS総額との一致を配分の証明とは扱いません。</li>',
+     '取引先別の参考推計（売掛金・未収入金・買掛金・未払金・未払費用）は明示的に選んだ場合だけ表示し、BS総額との一致を配分の証明とは扱いません。</li>'
+     '<li>「取引先別の残高と回収・支払の状況」では、読み込んだ過去の仕訳帳から取引先別の期首を推定し、当期の仕訳で月末まで繰り越します。取引先ごとに、増えた分（請求・仕入）を同じ金額のもの、なければ古いものから入金・支払で消し込み（先入先出）、読込範囲の始めで当てる相手のない入金・支払は、それより前からの残高の分とみなします。推定の合計とBSの期首の差は「内訳不明」に残し、取引先には配分しません。いちばん古い未回収・未払の経過と、その取引先のふだんの回収・支払日数を比べて「長く未回収の可能性」などを示し、主要な取引先（当期の請求・仕入の多い順）も表示します。取引先が未選択の入金・支払が多い科目（カード払いの未払金など）は判定しません。推定は参考値で、延滞・期日超過を確定するものではありません。</li>'),
+]
 
 
 def read(p):

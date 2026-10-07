@@ -3,6 +3,7 @@
 const test=require('node:test'),assert=require('node:assert/strict');
 const H=require('./harness.js');
 const ctx=H.load(),V=ctx.ReviewVariance,E=ctx.ReviewEngine;
+// v3.6 の言い回し（延滞と断定しない）に合わせて確認する
 const full=H.session(ctx),fullResult=E.analyze(full);
 const journalOnly=H.session(ctx,{pl:false,bs:false}),journalResult=E.analyze(journalOnly);
 const ex=(type,account,month,opt,s=full,r=fullResult)=>V.explain(s,r,type,account,month,opt);
@@ -35,12 +36,14 @@ test('セゾンカード：利用先ごとの増減と引落しの有無を説�
  assert.ok(!has(feb,/2回分/),'引落しが1回の月を2回分と言わない');
  assert.match(feb.headline,/口座引落し（取引先未選択）/);
 });
-test('セゾンカード：取引先別の月末残高は freee と同じく未選択がマイナス、期首は別行',()=>{
- const t=V.tagRows(full,fullResult,'monthlyBS','セゾンカード','party','balance');
+test('セゾンカード：取引先別の累計増減は freee と同じく未選択がマイナス、期首は別行（取引先別の残高は確定しない）',()=>{
+ const t=V.tagRows(full,fullResult,'monthlyBS','セゾンカード','party','cumulative');
  assert.equal(t.opening,922658);
  assert.ok(t.rows.find(r=>r.missing).values['2026-03']<0);
  assert.ok(t.rows.find(r=>r.label==='Google Japan G.K.').values['2026-03']>0);
  assert.equal(t.hasDiff,false,'期首＋内訳の合計が帳票の残高と一致する');
+ const b=V.tagRows(full,fullResult,'monthlyBS','セゾンカード','party','balance');
+ assert.equal(b.mode,'unknown','取引先内訳つきBSがないカードは残高を確定しない');
 });
 test('租税公課：品目別で自動車税・前年同月・個人の税金を説明する',()=>{
  const jun=ex('monthlyPL','租税公課','2026-06');
@@ -64,9 +67,9 @@ test('売上：隔月の取引先・新規の取引先・スポット案件の�
  assert.ok(has(ex('monthlyPL','売上高','2026-06'),/新しい取引先/));
  assert.ok(has(ex('monthlyPL','売上高','2026-07'),/前月が特に多かった反動/));
 });
-test('売掛金・預金：入金の遅れと2か月分の入金',()=>{
- assert.ok(has(ex('monthlyBS','売掛金','2026-05'),/入金が遅れている可能性/));
- assert.ok(has(ex('monthlyBS','売掛金','2026-06'),/遅れていた入金/));
+test('売掛金・預金：入金の候補が無い月・前月を上回る月と、2か月分の入金',()=>{
+ assert.ok(has(ex('monthlyBS','売掛金','2026-05'),/預金等を含む減少候補が当月見当たらない/));
+ assert.ok(has(ex('monthlyBS','売掛金','2026-06'),/預金等を含む減少候補が前月増加を上回る/));
  assert.ok(has(ex('monthlyBS','普通預金','2026-05'),/通常ある入金がない/));
  assert.ok(has(ex('monthlyBS','普通預金','2026-06'),/2か月分の入金/));
  const mar=ex('monthlyBS','普通預金','2026-03');
@@ -79,7 +82,7 @@ test('未払消費税：納付で残高がなくなった',()=>{
 });
 test('保険料：前年同月と年払いの記載',()=>{
  const e=ex('monthlyPL','保険料','2026-07');
- assert.ok(has(e,/例年この時期/));
+ assert.ok(has(e,/前年同月にも計上/));
  assert.ok(has(e,/年払い/));
 });
 test('内訳の金額は仕訳の合計と一致し、帳票との差もない',()=>{

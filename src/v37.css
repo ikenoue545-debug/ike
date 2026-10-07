@@ -1,0 +1,61 @@
+/* v3.7 月次PL・BSの目次：メニューの下に固定し、押した欄へ移動する */
+.mtoc{position:sticky;top:var(--mtoc-top,60px);z-index:20;display:flex;align-items:center;gap:8px;margin:0 0 16px;padding:7px 10px;background:color-mix(in srgb,var(--white) 94%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 16px #10203512}
+.mtoc-label{flex-shrink:0;font-size:11px;font-weight:700;letter-spacing:.12em;color:var(--muted);padding:0 4px}
+.mtoc-list{display:flex;gap:4px;margin:0;padding:0;list-style:none;overflow-x:auto;scrollbar-width:thin;flex:1;min-width:0;scroll-behavior:smooth}
+.mtoc-list li{flex-shrink:0}
+.mtoc-link,.mtoc-top{border:1px solid transparent;background:none;color:var(--ink);font:inherit;font-size:12.5px;line-height:1.4;padding:6px 10px;border-radius:7px;cursor:pointer;white-space:nowrap}
+.mtoc-link:hover,.mtoc-link:focus-visible,.mtoc-top:hover,.mtoc-top:focus-visible{background:color-mix(in srgb,var(--firm-orange,#ff9900) 12%,transparent);border-color:color-mix(in srgb,var(--firm-orange,#ff9900) 35%,transparent)}
+.mtoc-link.current{background:var(--firm-orange,#ff9900);color:#241a0c;border-color:var(--firm-orange,#ff9900);font-weight:600}
+.mtoc-short,.mtoc-mid{display:none}
+.mtoc-top{flex-shrink:0;color:var(--muted);font-size:11px}
+section.monthly-panel{scroll-margin-top:var(--mtoc-offset,120px)}
+section.monthly-panel h2:focus{outline:none}
+/* 名前が入りきらない幅では短い名前にする（1100px 以下は常に。広い画面では目次のスクリプトが mid → compact の順に付ける） */
+@media(max-width:1100px){.mtoc .mtoc-full,.mtoc .mtoc-mid{display:none}.mtoc .mtoc-short{display:inline}}
+.mtoc.mid .mtoc-full{display:none}.mtoc.mid .mtoc-mid{display:inline}
+.mtoc.compact .mtoc-full,.mtoc.compact .mtoc-mid{display:none}.mtoc.compact .mtoc-short{display:inline}
+@media(max-width:680px){.mtoc{margin:0 -4px 12px;padding:5px 6px;border-radius:8px}.mtoc-label{display:none}.mtoc-link{padding:6px 9px;font-size:12px}}
+@media print{.mtoc{display:none!important}}
+/* v3.7 取引先別の残高と回収・支払の状況（過去の仕訳からの推定） */
+.po-panel .panelbody{display:flex;flex-direction:column;gap:16px}
+.po-alerts h3,.po-account h3{font-size:15px;margin:0 0 8px}
+.po-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.po-card{display:flex;flex-direction:column;gap:4px;border:1px solid var(--line);border-left:4px solid var(--amber);border-radius:10px;padding:11px 13px;background:var(--white);min-width:0}
+.po-card.po-long{border-left-color:var(--red)}
+.po-cardtop{display:flex;align-items:center;gap:8px;justify-content:space-between}
+.po-card strong{font-size:15px;overflow-wrap:anywhere}
+.po-cardamt{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.po-card p{margin:0;line-height:1.65}
+.po-account{border-top:1px solid var(--line);padding-top:14px}
+.po-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.po-head p{margin:0}
+.po-recon{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin:10px 0 6px}
+.po-recon div{border:1px solid var(--line);border-radius:8px;padding:8px 11px;display:flex;flex-direction:column;min-width:0}
+.po-recon span{font-size:11px;color:var(--muted)}
+.po-recon strong,.po-recon strong .ts-money{font-size:17px;font-variant-numeric:tabular-nums}
+.po-recon small{font-size:11px;color:var(--muted);overflow-wrap:anywhere}
+.po-status{margin:4px 0 8px}
+.po-table th,.po-table td{padding:9px 12px;font-size:12.5px;vertical-align:top}
+.po-table p{margin:2px 0 0}
+.po-table th[scope=row]{white-space:normal;min-width:150px}
+.po-table .badge{white-space:nowrap}
+.po-table th[scope=row] strong{display:block}
+.po-major{margin-top:3px;background:color-mix(in srgb,var(--gold) 16%,transparent)}
+.po-row.po-long td,.po-row.po-long th{background:color-mix(in srgb,var(--red) 6%,var(--white))}
+.po-row.po-late td,.po-row.po-late th{background:color-mix(in srgb,var(--amber) 7%,var(--white))}
+.po-row.po-untagged th strong{color:var(--muted)}
+.po-residual th,.po-residual td{font-style:italic;color:var(--muted)}
+.po-old{color:var(--red);font-weight:600}
+.po-why summary,.po-matches summary,.po-method summary{cursor:pointer;font-size:12.5px}
+.po-why ul,.po-matches ul{margin:6px 0;padding-left:18px;font-size:12.5px;line-height:1.7}
+.po-method ol{margin:8px 0 0;padding-left:20px;line-height:1.8}
+/* スマホ：取引先ごとにカードのように縦に並べ、内訳・根拠を取引先名のすぐ下で読めるようにする */
+@media(max-width:680px){.po-recon{grid-template-columns:1fr 1fr}
+.po-panel .tablewrap{overflow:visible}.po-table,.po-table tbody{display:block;width:100%;min-width:0}.po-table thead{display:none}
+.po-table tr{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;padding:10px 4px;border-bottom:1px solid var(--line)}
+.po-table th[scope=row]{grid-column:1/-1;min-width:0;padding:0;border:0;background:none}
+.po-table td{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:0;border:0;text-align:left;min-width:0}
+.po-table td[data-label]::before{content:attr(data-label);font-size:11px;color:var(--muted)}
+.po-table td:empty{display:none}.po-table td.po-wide{grid-column:1/-1}
+.po-why[open]{width:100%}.po-why .tablewrap{overflow-x:auto}}
+@media print{.po-why[open] .ts-evidence{display:none}.po-panel .tablewrap{overflow:visible!important;max-height:none!important}.po-table{min-width:0;width:100%}.po-table th,.po-table td{min-width:0!important;padding:4px 5px;font-size:9px;color:#000!important}.po-table .ts-negative{color:#000!important}.po-why:not([open]){display:none}.po-cards{grid-template-columns:repeat(3,1fr)}}

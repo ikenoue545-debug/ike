@@ -16,6 +16,30 @@ const r=(base,spread)=>Math.round((base+(rnd()-.5)*spread)/10)*10;
 const P=[];let pno=1;function addPrior(date,debit,credit,amount,o={}){P.push({date,no:pno++,debit,credit,amount,dp:o.party||'',cp:o.party||'',di:o.item||'',ci:'',dd:'',cd:'',desc:o.desc||''});}
 addPrior('2025-06-02','租税公課','普通預金',39900,{party:'',item:'自動車税',desc:'自動車税 納付'});
 addPrior('2025-07-10','保険料','普通預金',96000,{party:'東西損害保険(株)',item:'損害保険料',desc:'事業用火災保険 年払い'});
+// 2025年の売掛金・買掛金・未払金（取引先別の期首残高を過去の仕訳から推定するための材料）
+// 2025年12月末の正解：売掛金 ブルースカイ 900,000・レッドストーン 220,000（2025年8月分が未回収）
+//                     買掛金 ミドリ印刷 165,000・クロダ製版 55,000（2025年10月分が未払い）／未払金 オフィスサプライ 44,000
+let seed2=11;const rnd2=()=>(seed2=(seed2*16807)%2147483647)/2147483647;const r2=(base,spread)=>Math.round((base+(rnd2()-.5)*spread)/10)*10;
+const months25=Array.from({length:12},(_,i)=>`2025-${String(i+1).padStart(2,'0')}`),last=(m)=>new Date(Date.UTC(+m.slice(0,4),+m.slice(5),0)).toISOString().slice(0,10);
+const blue25={},green25={},midori25={},office25={};
+months25.forEach((m,i)=>{
+ const mo=i+1,prev=i?months25[i-1]:null;
+ // 前月の売上の入金（1月は2024年12月分 850,000円：過去資料より前の残高）
+ addPrior(d(m,25),'普通預金','売掛金',mo===1?850000:blue25[prev],{party:'(株)ブルースカイ',desc:'売掛金 入金'});
+ blue25[m]=mo===12?900000:r2(900000,200000);addPrior(d(m,28),'売掛金','売上高',blue25[m],{party:'(株)ブルースカイ',desc:`${mo}月分 デザイン制作`});
+ if(mo%2===1){green25[m]=r2(420000,60000);addPrior(d(m,28),'売掛金','売上高',green25[m],{party:'合同会社グリーンリーフ',desc:'Web更新業務'});}
+ if(mo%2===0){const x=green25[prev];addPrior(d(m,25),'普通預金','売掛金',x,{party:mo===12?'':'合同会社グリーンリーフ',desc:mo===12?'振込入金':'売掛金 入金'});}
+ if(mo===6)addPrior(d(m,28),'売掛金','売上高',330000,{party:'(株)レッドストーン',desc:'イベント用デザイン'});
+ if(mo===7)addPrior(d(m,31),'普通預金','売掛金',330000,{party:'(株)レッドストーン',desc:'売掛金 入金'});
+ if(mo===8)addPrior(d(m,28),'売掛金','売上高',220000,{party:'(株)レッドストーン',desc:'追加デザイン'});
+ // 買掛金：外注の印刷代は翌月末払い（1月は2024年12月分 140,000円）。クロダ製版の10月分は未払い。
+ addPrior(last(m),'買掛金','普通預金',mo===1?140000:midori25[prev],{party:'(株)ミドリ印刷',desc:'買掛金 支払'});
+ midori25[m]=mo===12?165000:r2(150000,30000);addPrior(d(m,20),'外注費','買掛金',midori25[m],{party:'(株)ミドリ印刷',item:'印刷',desc:'印刷代'});
+ if(mo===10)addPrior(d(m,15),'外注費','買掛金',55000,{party:'(有)クロダ製版',item:'製版',desc:'製版代'});
+ // 未払金：事務用品は翌月払い
+ if(prev&&office25[prev])addPrior(last(m),'未払金','普通預金',office25[prev],{party:'(株)オフィスサプライ',desc:'未払金 支払'});
+ office25[m]=mo===12?44000:r2(30000,10000);addPrior(d(m,10),'事務用品費','未払金',office25[m],{party:'(株)オフィスサプライ',item:'文具',desc:'事務用品'});
+});
 months.forEach((m,i)=>{
  const mo=i+1;
  // 売上（売掛金計上 → 翌月25日入金）
@@ -66,6 +90,16 @@ months.forEach((m,i)=>{
  // 未払消費税：3月に納付
  if(mo===3)add(d(m,15),'未払消費税','普通預金',620300,{party:'税務署',desc:'消費税 確定申告分 納付'});
 });
+// 2026年の買掛金・未払金（別の乱数で、既存の金額を変えない）。7月はミドリ印刷への支払がなく、8月に2か月分。
+const midori26={},office26={};
+months.forEach((m,i)=>{
+ const mo=i+1,prev=i?months[i-1]:null;
+ if(mo!==7){const pay=mo===1?165000:mo===8?midori26[months[i-2]]+midori26[prev]:midori26[prev];add(last(m),'買掛金','普通預金',pay,{party:'(株)ミドリ印刷',desc:mo===8?'買掛金 支払（6・7月分）':'買掛金 支払'});}
+ midori26[m]=r2(150000,30000);add(d(m,20),'外注費','買掛金',midori26[m],{party:'(株)ミドリ印刷',item:'印刷',desc:'印刷代'});
+ add(last(m),'未払金','普通預金',mo===1?44000:office26[prev],{party:'(株)オフィスサプライ',desc:'未払金 支払'});
+ office26[m]=r2(30000,10000);add(d(m,10),'事務用品費','未払金',office26[m],{party:'(株)オフィスサプライ',item:'文具',desc:'事務用品'});
+});
+J.sort((a,b)=>a.date.localeCompare(b.date)||a.no-b.no);P.sort((a,b)=>a.date.localeCompare(b.date)||a.no-b.no);
 // ---- CSV 出力
 const q=v=>{const s=String(v??'');return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
 const line=a=>a.map(q).join(',');
@@ -76,10 +110,10 @@ function journalCSV(rows){
 fs.writeFileSync(path.join(out,'journal-2026.csv'),journalCSV(J));
 fs.writeFileSync(path.join(out,'journal-2025.csv'),journalCSV(P));
 // ---- 月次PL・BS（仕訳から作る帳票。freeeの月次推移CSVに近い横形式）
-const PL_INCOME=['売上高'],PL_EXP=['租税公課','水道光熱費','旅費交通費','通信費','広告宣伝費','保険料','消耗品費','法定福利費','給料手当','支払手数料','会議費','地代家賃'];
-const BS_ASSET=['普通預金','現金','売掛金'],BS_LIAB=['セゾンカード','預り金','未払消費税'],OWNER_DRAW=['事業主貸'],OWNER_CONTRIB=['事業主借'],EQUITY=['元入金'];
-const opening={'普通預金':3000000,'現金':50000,'売掛金':900000,'セゾンカード':922658,'預り金':140000,'未払消費税':620300,'事業主貸':0,'事業主借':0};
-opening['元入金']=opening['普通預金']+opening['現金']+opening['売掛金']-opening['セゾンカード']-opening['預り金']-opening['未払消費税'];
+const PL_INCOME=['売上高'],PL_EXP=['租税公課','水道光熱費','旅費交通費','通信費','広告宣伝費','保険料','消耗品費','事務用品費','法定福利費','給料手当','外注費','支払手数料','会議費','地代家賃'];
+const BS_ASSET=['普通預金','現金','売掛金'],BS_LIAB=['買掛金','未払金','セゾンカード','預り金','未払消費税'],OWNER_DRAW=['事業主貸'],OWNER_CONTRIB=['事業主借'],EQUITY=['元入金'];
+const opening={'普通預金':3000000,'現金':50000,'売掛金':1120000,'買掛金':220000,'未払金':44000,'セゾンカード':922658,'預り金':140000,'未払消費税':620300,'事業主貸':0,'事業主借':0};
+opening['元入金']=opening['普通預金']+opening['現金']+opening['売掛金']-opening['買掛金']-opening['未払金']-opening['セゾンカード']-opening['預り金']-opening['未払消費税'];
 const net=(a,m)=>J.filter(x=>x.date.slice(0,7)===m).reduce((n,x)=>n+(x.debit===a?x.amount:0)-(x.credit===a?x.amount:0),0);
 const plv=(a,m)=>PL_INCOME.includes(a)?-net(a,m):net(a,m);
 const head=['勘定科目',...months.map(m=>m.replace('-','/')),'期間累計'];

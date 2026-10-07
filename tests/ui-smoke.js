@@ -10,7 +10,7 @@ const H=require('./harness.js');
  const b=await chromium.launch({executablePath:process.env.CHROME||'/opt/pw-browsers/chromium-1194/chrome-linux/chrome'});
  const p=await b.newPage({viewport:{width:1440,height:960}});
  const errors=[];p.on('pageerror',e=>errors.push(e.message));p.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
- await p.goto('file://'+path.join(H.ROOT,'dist','自計化レビュー_v3.3.html'));
+ await p.goto('file://'+path.join(H.ROOT,'dist','自計化レビュー_v3.7.html'));
  await p.waitForFunction(()=>window.LedgerApp&&document.querySelector('[data-view]'));
  await p.waitForTimeout(600);
  await p.evaluate(t=>{const b=document.querySelector(`[data-theme-choice="${t}"]`);if(b)b.click();},theme);

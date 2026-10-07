@@ -36,7 +36,8 @@ function journals(session){
   const rs=g.rows,net=sum(rs.map(r=>r.debitAmount-r.creditAmount));
   if(!/^\d{4}-\d{2}-\d{2}$/.test(g.date||'')||!Number.isFinite(Date.parse(g.date+'T00:00:00Z')))g.reasons.push('取引日が未確定です。');
   if(rs.some(r=>!r.hasId||r.journalAmbiguous))g.reasons.push('仕訳番号・複合仕訳のまとまりが未確定です。');
-  if(rs.some(r=>!finite(r.debitAmount)||!finite(r.creditAmount)||r.debitAmount<0||r.creditAmount<0)||!finite(sum(rs.map(r=>r.debitAmount)))||!finite(sum(rs.map(r=>r.creditAmount))))g.reasons.push('借貸金額が円単位の安全な整数として確定できません。');
+  if(rs.some(r=>r.debitAmount<0||r.creditAmount<0))g.reasons.push('マイナス金額の仕訳があります。');
+  else if(rs.some(r=>!finite(r.debitAmount)||!finite(r.creditAmount))||!finite(sum(rs.map(r=>r.debitAmount)))||!finite(sum(rs.map(r=>r.creditAmount))))g.reasons.push('借貸金額が円単位の安全な整数として確定できません。');
   if(!finite(net)||net!==0)g.reasons.push('仕訳全体の借貸が一致しません。');
   if(rs.some(r=>importErrors(session,g.type,r)))g.reasons.push('CSVに読取エラー・除外行があります。');
   if(g.type==='prior'&&month(rs[0])>=session.project.start)g.reasons.push('過去仕訳の読込先に当期以降の取引日が含まれています。');
@@ -93,10 +94,25 @@ function reportReasons(session,type,r){
  return reasons;
 }
 function validReport(session,type,r){return !reportReasons(session,type,r).length;}
+// 帳票セルの索引（科目×年月×取引先）。取引先ごとに帳票全体を読み直さないよう、1回の分析（F.build）の間だけ使い回す。
+// 資料の追記は datasets の配列をその場で増やすので、分析をまたいでは使わない（epoch と件数が変われば作り直す）。
+let epoch=0;
+const cellIndexes=new WeakMap(),EMPTY=[];
+function cellIndex(list){
+ const c=cellIndexes.get(list);if(c&&c.epoch===epoch&&c.length===list.length)return c.ix;const ix=new Map();
+ for(const r of list){const id=key(r.account)+'\u0001'+month(r)+'\u0001'+(!r.tagDimension?'\u0000':r.tagDimension==='party'?'p:'+key(r.tagValue):'x');let l=ix.get(id);if(!l)ix.set(id,l=[]);l.push(r);}
+ cellIndexes.set(list,{epoch,length:list.length,ix});return ix;
+}
+const entityCache=new WeakMap();
+function entityConflict(session){
+ const a=session.datasets?.monthlyBS||EMPTY,b=session.datasets?.priorBS||EMPTY,c=entityCache.get(a);
+ if(c&&c.epoch===epoch&&c.b===b&&c.la===a.length&&c.lb===b.length)return c.v;
+ const v=uniq([a,b].flatMap(list=>list.map(r=>key(r.reportEntity))).filter(Boolean)).length>1;entityCache.set(a,{epoch,b,la:a.length,lb:b.length,v});return v;
+}
 function reportCell(session,type,account,m,party){
- const rs=(session.datasets?.[type]||[]).filter(r=>key(r.account)===key(account)&&month(r)===m&&(party===undefined?!r.tagDimension:r.tagDimension==='party'&&key(r.tagValue)===party));
+ const rs=(cellIndex(session.datasets?.[type]||EMPTY).get(key(account)+'\u0001'+m+'\u0001'+(party===undefined?'\u0000':'p:'+party))||[]).slice();
  const reasons=[];if(rs.length>1)reasons.push('同じ月・科目・取引先の帳票セルが重複しています。');if(rs.length===1)reasons.push(...reportReasons(session,type,rs[0]));
- const entities=uniq(['monthlyBS','priorBS'].flatMap(t=>(session.datasets?.[t]||[]).map(r=>key(r.reportEntity))).filter(Boolean));if(entities.length>1)reasons.push('BSの事業者名が一致しません。');
+ if(entityConflict(session))reasons.push('BSの事業者名が一致しません。');
  return {amount:rs.length===1&&!reasons.length?rs[0].amount:null,rows:rs,reasons,source:type,present:rs.length>0,date:m};
 }
 function exactOpening(session,account,m,party){
@@ -107,11 +123,26 @@ function exactOpening(session,account,m,party){
  const best=current.amount!==null?current:prior.amount!==null?prior:null;
  return best?{...best,rows}:{amount:null,rows,reasons:[],source:'unknown',present:current.present||prior.present,date:m};
 }
+// 科目×取引先ごとの仕訳を一度だけ索引する（取引先ごとに全仕訳を読み直すと、取引先数×仕訳数で遅くなるため）。
+// 結果の並び・対象は、索引なしで全仕訳を順に絞り込んだ場合と同じ。
+const movementIndexes=new WeakMap();
+function movementIndex(js){
+ let ix=movementIndexes.get(js);if(ix)return ix;
+ ix={entries:new Map(),groups:new Map()};
+ for(const g of js.valid){const m=month(g.rows[0]),touched=new Set();
+  for(const r of g.rows)for(const side of ['debit','credit']){
+   const id=key(r[side])+'\u0001'+key(partyOf(r,side));let l=ix.entries.get(id);if(!l)ix.entries.set(id,l=[]);l.push({m,r,side});
+   if(r[side+'Amount']!==0&&!touched.has(id)){touched.add(id);let gl=ix.groups.get(id);if(!gl)ix.groups.set(id,gl=[]);gl.push({m,g});}
+  }}
+ movementIndexes.set(js,ix);return ix;
+}
 function movements(js,account,party,start,end){
- return js.valid.filter(g=>month(g.rows[0])>=start&&month(g.rows[0])<=end).flatMap(g=>g.rows).flatMap(r=>['debit','credit'].map(side=>({r,side}))).filter(e=>key(e.r[e.side])===key(account)&&key(partyOf(e.r,e.side))===party).map(e=>(direction(account)==='receipt'?(e.side==='debit'?1:-1):(e.side==='credit'?1:-1))*e.r[e.side+'Amount']);
+ const list=movementIndex(js).entries.get(key(account)+'\u0001'+party)||[];
+ return list.filter(e=>e.m>=start&&e.m<=end).map(e=>(direction(account)==='receipt'?(e.side==='debit'?1:-1):(e.side==='credit'?1:-1))*e.r[e.side+'Amount']);
 }
 function movementRows(js,account,party,start,end){
- return uniq(js.valid.filter(g=>month(g.rows[0])>=start&&month(g.rows[0])<=end&&g.rows.some(r=>['debit','credit'].some(side=>key(r[side])===key(account)&&key(partyOf(r,side))===party&&r[side+'Amount']!==0))).flatMap(g=>g.rows));
+ const list=movementIndex(js).groups.get(key(account)+'\u0001'+party)||[];
+ return uniq(list.filter(x=>x.m>=start&&x.m<=end).flatMap(x=>x.g.rows));
 }
 function openingForParty(session,account,party,prev,cov,js){
  const exact=exactOpening(session,account,prev,party);if(exact.present)return exact;
@@ -140,11 +171,13 @@ function patternReasons(p,asOf,cov,start,end,session){
 function build(session,model){
  const months=model.months||E.monthRange(session.project.start,session.project.end),start=months[0]||session.project.start,end=months.at(-1)||session.project.end,prev=F.prevMonth(start),js=journals(session),cov=coverage(session,model,js),events=extractEvents(session,model,js),validCurrentDates=js.valid.filter(g=>g.type==='current'&&month(g.rows[0])>=start&&month(g.rows[0])<=end).map(g=>g.date).sort(),asOf=validCurrentDates.at(-1)||null,analysisMonth=asOf?.slice(0,7)||null,accounts=[],parties=[],alerts=[],notes=[];
  const names=new Map();for(const g of model.bs||[])if(target(g.account))names.set(key(g.account),g.account);for(const g of js.all)for(const r of g.rows)for(const a of [r.debit,r.credit])if(target(a)&&!names.has(key(a)))names.set(key(a),a);for(const t of ['monthlyBS','priorBS'])for(const r of session.datasets?.[t]||[])if(target(r.account)&&!names.has(key(r.account)))names.set(key(r.account),r.account);
+ // 取引先ごとの決済候補を一度だけ振り分ける（並びは events と同じ）
+ const eventsBy=new Map();for(const e of events){const id=key(e.account)+'\u0001'+e.party;let l=eventsBy.get(id);if(!l)eventsBy.set(id,l=[]);l.push(e);}
  for(const account of names.values()){
   const totalOpening=exactOpening(session,account,prev),totalClosing=reportCell(session,'monthlyBS',account,end),accountParties=[];
   for(const [party,label] of partyIdentity(js,session,account)){
    const op=openingForParty(session,account,party,prev,cov,js),closingReport=reportCell(session,'monthlyBS',account,end,party),changeValues=movements(js,account,party,start,end),periodChange=continuous(cov,start,end)?sum(changeValues):null,observedChange=analysisMonth&&continuous(cov,start,analysisMonth)?sum(movements(js,account,party,start,analysisMonth)):null,change=observedChange;
-   const partyEvents=events.filter(e=>key(e.account)===key(account)&&e.party===party),cash=partyEvents.filter(e=>e.classification==='cash_linked'),nonCash=partyEvents.filter(e=>e.classification!=='cash_linked');
+   const partyEvents=eventsBy.get(key(account)+'\u0001'+party)||[],cash=partyEvents.filter(e=>e.classification==='cash_linked'),nonCash=partyEvents.filter(e=>e.classification!=='cash_linked');
    const computed=finite(op.amount)&&finite(periodChange)&&finite(op.amount+periodChange)?op.amount+periodChange:null,analysisReport=analysisMonth?reportCell(session,'monthlyBS',account,analysisMonth,party):{amount:null},analysisComputed=finite(op.amount)&&finite(observedChange)&&finite(op.amount+observedChange)?op.amount+observedChange:null,analysisClosing=analysisReport.amount!==null?analysisReport.amount:analysisComputed,analysisDifference=subtract(analysisComputed,analysisReport.amount),periodDifference=subtract(computed,closingReport.amount);
    let closing=closingReport.amount,closingBasis=closing!==null?'report':computed!==null?'rollforward':'unknown';if(closing===null)closing=computed;
    const reviewReasons=uniq([...op.reasons,...closingReport.reasons]);if(op.amount===null)reviewReasons.push('取引先別期首残高が未確定です。累計増減を残高とは扱いません。');if(!continuous(cov,start,end))reviewReasons.push('対象期間の仕訳に未読込月・未確定のまとまりがあります。残高の繰越計算は保留します。');
@@ -166,8 +199,11 @@ function build(session,model){
  const liquidity=liquiditySnapshot(session,model,accounts,cov),ratios=[];
  if(liquidity.ready&&liquidity.cash<liquidity.outstandingPayables)alerts.push({kind:'liquidity_snapshot',title:'現預金と債務残高の差を確認',reason:`${liquidity.asOf}の現預金は対象債務残高を下回ります。すべて即時支払と仮定した差引参考額は${liquidity.netAfterPayables.toLocaleString('ja-JP')}円です。支払期日・入金予定・利用可能額を示す資金繰り予測ではありません。`,account:null,party:null,amount:liquidity.netAfterPayables,rows:liquidity.rows});
  if(js.invalid.length)notes.push('番号不明・貸借不一致・読取エラー・参照除外・資料間重複の仕訳を、決済周期の観測から除外しています。');
- notes.push('間隔は現預金を伴う対象科目の減少候補の観測値です。請求書への紐付け、約定回収・支払日、期日超過は確定しません。','期首内訳がない取引先の残高は不明です。前期仕訳の純増や推計を確定期首には使いません。','売上・仕入の税込／税抜、掛取引の範囲が確定していないため、回収・支払日数の比率は自動算定していません。');
- return {accounts,parties,events,alerts,liquidity,ratios,notes,coverage:[...cov.values()].filter(c=>c.month>=start&&c.month<=end).sort((a,b)=>a.month.localeCompare(b.month)),observationEnd:asOf,analysisThrough:asOf,scopeEnd:endDay(end),scope:'observed_settlement_candidates',version:1};
+ notes.push('間隔は現預金を伴う対象科目の減少候補の観測値です。請求書への紐付け、約定回収・支払日、期日超過は確定しません。','期首内訳がない取引先の残高は不明です。前期仕訳の純増や推計を確定期首には使いません。過去の仕訳からの参考推計は「取引先別の残高と回収・支払の状況」に分けて表示します。','売上・仕入の税込／税抜、掛取引の範囲が確定していないため、回収・支払日数の比率は自動算定していません。');
+ const out={accounts,parties,events,alerts,liquidity,ratios,notes,coverage:[...cov.values()].filter(c=>c.month>=start&&c.month<=end).sort((a,b)=>a.month.localeCompare(b.month)),observationEnd:asOf,analysisThrough:asOf,scopeEnd:endDay(end),scope:'observed_settlement_candidates',version:1};
+ // 同じ build の中で後続のモジュール（取引先別の期首推定）が仕訳のまとまりを作り直さないよう、表に出さずに渡す
+ Object.defineProperty(out,'journals',{value:js,enumerable:false});
+ return out;
 }
 function liquiditySnapshot(session,model,accounts,cov){
  const end=model.months?.at(-1)||session.project.end,start=model.months?.[0]||session.project.start,usable=(model.months||E.monthRange(start,end)).filter(m=>cov.get(m)?.available).reverse();
@@ -181,5 +217,5 @@ function liquiditySnapshot(session,model,accounts,cov){
 }
 const S={build,journals,extractEvents,interval,exactOpening,reportCell,version:1};
 root.ReviewSettlement=S;
-F.build=function(session,current,months){const model=originalBuild(session,current,months);model.settlement=build(session,model);return model;};
+F.build=function(session,current,months){epoch++;const model=originalBuild(session,current,months);model.settlement=build(session,model);return model;};
 })(typeof window!=='undefined'?window:globalThis);

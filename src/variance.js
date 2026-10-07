@@ -386,6 +386,9 @@ function inferAccount(c,s,ex,push){
    if(incV>EPS){const T2=median([...c.loaded].filter(m=>m!==ex.month).map(m=>sum(s.entries.filter(e=>e.month===m&&e.amount>0),e=>e.amount)).filter(v=>v>EPS));if(T2&&incV>T2*1.5&&incV-T2>=th)push('中','通常月より多い',`当月の${s.account}の増加 ${yen(incV)} は、通常月（約${yen(T2)}）の約${(incV/T2).toFixed(1)}倍です。`,'level');}
   }
  }
+ // 取引先別の期首推定（ReviewPartyOpening）から、残高に残っている古い未回収・未払を補足する
+ // 残高・経過は推定の基準月（当期の仕訳を連続して読めた最後の月）時点の値なので、その月の説明にだけ出す
+ if(s.type==='monthlyBS'&&!ex.scoped){const po=c.model.partyOpening,k=v=>clean(v).replace(/[\s　]/g,''),a=po?.accounts?.find(x=>k(x.account)===k(s.account));if(a&&a.through===ex.month)for(const x of (po?.alerts||[]).filter(x=>k(x.account)===k(s.account)).slice(0,2))push('低',`参考：${x.label}の${x.kind==='receipt'?'未回収':'未払'}が残っている可能性`,x.text.replace(/^[^／]*／/,'')+'（過去の仕訳からの推定。「取引先別の残高と回収・支払の状況」を参照）','party');}
  if(Number.isFinite(ex.unexplained)&&Math.abs(ex.unexplained)>=1)push('低','仕訳で説明できない差',`帳票の${s.type==='monthlyPL'?'前月差':'残高の増減'}のうち ${signed(ex.unexplained)} は、読み込んだ仕訳では説明できません。仕訳帳の読込範囲（全件・期間外）、帳票と仕訳帳の科目名、税込／税抜の設定を確認してください。`,'data');
 }
 
@@ -494,32 +497,17 @@ function monthReasons(session,result,type,account){
 }
 // 売掛金の取引先期首を前期仕訳から推計。同日は借貸を相殺し、CSV行順を決済順と扱わない。
 // 前期開始前の債権が前期中に回収されたという仮定。BSとの差を特定の取引先へ割り当てない。
+// 取引先別の期首の参考推計（売掛金・未収入金・買掛金・未払金・未払費用）。計算は ReviewPartyOpening が行う。
+// 取引先の表示名ごとに推定期首を返す。BSの期首との差は unallocated（未配賦）として別行に出す。
 function estimatedReceivableOpening(c,s){
  if(Object.hasOwn(s,'estimatedOpening'))return s.estimatedOpening;
- const fail=()=>s.estimatedOpening=null;
- if(s.type!=='monthlyBS'||s.fam!=='receivable'||s.flowOnly||s.g?.approximate||!Number.isFinite(s.opening)||s.opening<0)return fail();
- const base=(s.g.rows||[]).find(r=>r.opening&&r.date<=prevMonth(c.months[0])&&Number.isFinite(r.amount));
- if(!base||base.amount<0)return fail();
- const end=base.date,start=nextMonth((+end.slice(0,4)-1)+end.slice(4));
- const history=(c.session.datasets.prior||[]).filter(r=>r.date?.slice(0,7)>=start&&r.date.slice(0,7)<=end);
- const covered=new Set(history.map(r=>r.date.slice(0,7)));
- for(let m=start;m<=end;m=nextMonth(m))if(!covered.has(m))return fail();
- if(history.some(r=>r.importErrors>0||r.journalAmbiguous||!Number.isSafeInteger(r.debitAmount)||!Number.isSafeInteger(r.creditAmount))||E.journalGroups(history).some(rs=>Math.abs(sum(rs,r=>r.debitAmount-r.creditAmount))>EPS)||(c.session.imports||[]).some(i=>i.type==='prior'&&i.errors>0))return fail();
- const excluded=c.session.history?.sources||{};
- if(history.some(r=>excluded[r.historySource]?.status==='exclude'))return fail();
- // 重ねて読み込んだ同じCSVを二重計上しない。疑わしい重複は推計を保留する。
- const fingerprints=new Map();
- for(const r of history){const f=JSON.stringify([r.date,r.id,r.debit,r.credit,r.debitAmount,r.creditAmount,r.debitParty,r.creditParty,r.party,r.description]),origin=r.importSource||r.historySource||r.source||'';if(fingerprints.has(f)&&fingerprints.get(f)!==origin)return fail();fingerprints.set(f,origin);}
- const days=new Map();
- for(const e of c.priorRaw.get(s.account)||[]){if(e.month<start||e.month>end)continue;const k=tag(e.row,e.side,'party');let d=days.get(k);if(!d)days.set(k,d=new Map());d.set(e.row.date,(d.get(e.row.date)||0)+s.sign*(e.side==='debit'?1:-1)*e.raw);}
- const values=new Map();
- for(const [k,d] of days){let run=0,min=0;for(const [,v] of [...d].sort((a,b)=>a[0].localeCompare(b[0]))){run+=v;min=Math.min(min,run);}values.set(k,run-min);}
- const baseTotal=sum([...values.values()]);if(baseTotal>base.amount+EPS)return fail();
- // 対象期間が年度途中なら、年度期首から表示開始前までの当期仕訳も加える。
- const before=prevMonth(c.months[0]);
- if(before>end){for(let m=nextMonth(end);m<=before;m=nextMonth(m))if(!c.loaded.has(m))return fail();
-  for(const e of s.entries)if(e.month>end&&e.month<=before){const k=tag(e.row,e.side,'party');values.set(k,(values.get(k)||0)+e.amount);}}
- return s.estimatedOpening={values,start,end,allocated:sum([...values.values()]),unallocated:s.opening-sum([...values.values()])};
+ const po=s.type==='monthlyBS'&&!s.flowOnly&&!s.g?.approximate?root.ReviewPartyOpening?.openingValues(c.model,s.account):null;
+ if(!po)return s.estimatedOpening=null;
+ // 空白の違うタグ（「ブルー スカイ」と「ブルースカイ」）は同じ取引先：期首と付け替えは最初のタグだけに置き、二重に数えない
+ const values=new Map(),adjust=new Map(),used=new Set(),k=v=>clean(v).replace(/[\s　]/g,'');
+ for(const t of tags(c,s.type,s.account,'party').map.keys()){if(used.has(k(t))){values.set(t,0);continue;}values.set(t,po.byKey(t));const a=po.adjustByKey?.(t);if(a)adjust.set(t,a);used.add(k(t));}
+ for(const p of po.account.parties)if(!used.has(p.party)){const t=p.untagged?'':p.label;values.set(t,p.opening||0);const a=po.adjustByKey?.(p.party);if(a)adjust.set(t,a);used.add(p.party);}
+ return s.estimatedOpening={values,adjust,start:po.start,end:po.end,allocated:po.allocated,unallocated:po.unallocated,status:po.status,statusText:po.statusText};
 }
 
 // BSの内訳期首が無い資料から確定残高を作らない。推計は明示的な参考表示だけ。
@@ -560,7 +548,8 @@ function tagRows(session,result,type,account,dim,mode='balance'){
  const coverage=new Map();let continuous=true;
  for(const m of months){const covered=ledgerAvailable(c,m);continuous&&=covered;coverage.set(m,cumulative?continuous:covered);}
  const available=m=>!!coverage.get(m);
- const vals=tg=>{let run=estimate?.values.get(tg.key)||0;return Object.fromEntries(months.map(m=>{const v=tg.flow[m]||0;run+=v;return [m,!available(m)||unknown?null:cumulative?run:v];}));};
+ // 推計では、未選択の入金・支払を金額一致で取引先に当てた分（取引先別の残高の欄と同じ付け替え）も月の増減に入れる
+ const vals=tg=>{let run=estimate?.values.get(tg.key)||0;const adj=estimate?.adjust?.get(tg.key)||{};return Object.fromEntries(months.map(m=>{const v=(tg.flow[m]||0)+(adj[m]||0);run+=v;return [m,!available(m)||unknown?null:cumulative?run:v];}));};
  const rows=list.map(tg=>({key:tg.key,label:tg.label,missing:tg.missing,opening:estimate?(estimate.values.get(tg.key)||0):null,estimated:!!estimate,values:vals(tg),count:sum(months,m=>tg.count[m]||0)}));
  const total=Object.fromEntries(months.map(m=>[m,!available(m)||unknown?null:sum(rows,r=>r.values[m])]));
  const report=Object.fromEntries(months.map(m=>[m,valueAt(c,s,m)]));

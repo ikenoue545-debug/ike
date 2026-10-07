@@ -1,15 +1,19 @@
-// 本体HTMLの判定エンジン（ReviewEngine など）と src/variance.js を Node で読み込み、
+// 配布ファイル（dist）の判定エンジン・月次モジュールを Node で読み込み、
 // tests/fixtures の freee 形式CSVからセッションを組み立てる。
 'use strict';
 const fs=require('fs'),path=require('path'),vm=require('vm');
 const ROOT=path.join(__dirname,'..');
 function scripts(html){return [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m=>m[1]);}
-function load(htmlPath=path.join(ROOT,'base','jikeika-review-v3.0.html'),extra=[path.join(ROOT,'src','variance.js')]){
- const ctx={console,Intl,Date,Math,JSON,Map,Set,WeakMap,Promise,TextDecoder,setTimeout,clearTimeout};ctx.globalThis=ctx;vm.createContext(ctx);
+// 既定では dist の配布ファイル（build.py の出力）から、画面以外のモジュールと月次画面を読み込む。
+const DIST=path.join(ROOT,'dist','自計化レビュー_v3.7.html');
+function load(htmlPath=DIST){
+ const ctx={console,Intl,Date,Math,JSON,Map,Set,WeakMap,WeakSet,Promise,TextDecoder,setTimeout,clearTimeout,Number,String,Array,Object,Error,RegExp,Symbol};ctx.globalThis=ctx;vm.createContext(ctx);
  const html=fs.readFileSync(htmlPath,'utf8');
- const want=/root\.Review(Engine|Details|History|Financial|Insight)=/;
- for(const src of scripts(html))if(want.test(src)&&!/root\.ReviewVariance=/.test(src))vm.runInContext(src,ctx,{filename:'base.html'});
- for(const f of extra)vm.runInContext(fs.readFileSync(f,'utf8'),ctx,{filename:f});
+ for(const src of scripts(html)){
+  if(src.startsWith('window.__KUBUN_SRC')||/window\.LedgerApp\s*=|KubunHost/.test(src))continue;
+  if(!/root\.Review\w+\s*=|F\.page=page/.test(src)||/root\.Review(Scroll|Motion)=/.test(src))continue;
+  vm.runInContext(src,ctx,{filename:path.basename(htmlPath)});
+ }
  return ctx;
 }
 function readCSV(ctx,file,type,project){

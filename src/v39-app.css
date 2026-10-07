@@ -1,1 +1,31 @@
 /* v39-app */
+/* v3.9 資料の読込：基本の8ファイル、タグ別の読込状況、まとめて読込 */
+.dp-guide .panelbody>p{margin:8px 0 0}
+.dp-drop .dp-bulk{font-size:15px;padding:12px 22px}
+.dp-scope{display:flex;flex-direction:column;gap:12px}
+.dp-period{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.dp-period strong{font-size:16px;font-variant-numeric:tabular-nums}
+.dp-guide{margin-bottom:18px}
+.dp-tags{list-style:none;margin:0 0 14px;padding:0;border:1px solid var(--line);border-radius:8px}
+.dp-tag{display:grid;grid-template-columns:20px 4.2em minmax(0,1fr);gap:2px 8px;align-items:baseline;padding:7px 10px;font-size:13px;border-top:1px solid var(--line)}
+.dp-tag:first-child{border-top:0}
+.dp-mark{color:var(--green);font-weight:700;text-align:center}
+.dp-tagname{font-weight:600}
+.dp-tag:not(.ok) .dp-tagname{color:var(--muted);font-weight:500}
+.dp-tagfile{min-width:0;overflow-wrap:anywhere}
+.dp-tagnote{grid-column:3;min-width:0}
+.dp-warn{color:var(--amber)}
+.dp-optional{font-size:12px;font-weight:500;color:var(--muted);margin-left:4px}
+.dp-more{margin-top:20px;padding:16px 20px}
+.dp-more>summary .small{font-weight:400;margin-left:10px}
+.dp-more .datasetcards{margin-top:14px}
+.dp-extend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:8px}
+.dp-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+#companyDialog .field>.small{display:block;margin-top:4px}
+@media(max-width:680px){
+ .dp-drop{padding:22px 14px}
+ .dp-drop .dp-bulk{width:100%}
+ .dp-tag{grid-template-columns:18px 4em minmax(0,1fr);padding:7px 8px}
+ .dp-more{padding:14px}
+ .dp-more>summary .small{display:block;margin:4px 0 0}
+}

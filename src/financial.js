@@ -159,13 +159,14 @@ function normalizeReports(rows,type,mapping,h,cfg,options={}){
   if(isSection(account)&&!/^事業主[貸借]$/.test(key(account))&&amounts.some(x=>clean(x.value))){section=account;account+=' 計';}
   const parsedTotal=reportMoney(reportedTotalRaw,unit),reportedTotal=hasTotal?parsedTotal.value:null;
   if(hasTotal&&!parsedTotal.valid){errors.push({line:i+1,fields:['期間累計の金額（正確な円整数と桁区切りを確認）']});continue;}
+  // 千円の帳票は月ごと・期間累計ごとに千円未満を切り捨てるため、月数×1,000円までの差は注意にしない
   if(totalIndex>=0){
    const ns=cols.map(c=>reportMoney(raw[c.index],unit)),complete=ns.every(n=>n.valid&&Number.isSafeInteger(n.value)),calculated=complete?reportSum(ns.map(n=>n.value)):null,reported=reportedTotal;
    if(complete&&calculated===null)errors.push({line:i+1,fields:['月別合計が正確に計算できる円整数の上限を超えています']});
    const difference=Number.isSafeInteger(calculated)&&Number.isSafeInteger(reported)?reportSum([calculated,-reported]):null;
    if(Number.isSafeInteger(calculated)&&Number.isSafeInteger(reported)&&difference===null)errors.push({line:i+1,fields:['期間累計差額が正確に計算できる円整数の上限を超えています']});
    (tagValue?detailReportedTotals:reportedTotals).push({account,months:cols.map(c=>c.month),reported,calculated,difference,...(tagValue?{tagDimension:tagDim,tagValue}:{})});
-   if(difference!==null&&Math.abs(difference)>.01)warnings.push(account+(tagValue?' / '+tagValue:'')+'の期間累計とCSVの月別合計に差額 '+difference.toLocaleString()+'円があります。帳票の表示方法と読込範囲を確認してください。');
+   if(difference!==null&&Math.abs(difference)>(unit===1000?cols.length*1000:.01))warnings.push(account+(tagValue?' / '+tagValue:'')+'の期間累計とCSVの月別合計に差額 '+difference.toLocaleString()+'円があります。帳票の表示方法と読込範囲を確認してください。');
   }
   for(const cell of amounts){
    if(!cell.date){errors.push({line:i+1,fields:['年付きの月']});continue;}
@@ -183,7 +184,8 @@ function normalizeReports(rows,type,mapping,h,cfg,options={}){
   for(let i=items.length-1;i>=0;i--)if(items[i].tagDimension&&tagCheck.dropped.has(key(items[i].account)))items.splice(i,1);
  }
  const referenceMonth=prevMonth(cfg.start),parentItems=items.filter(r=>!r.tagDimension),detailItems=items.filter(r=>r.tagDimension),openingMissingAccounts=type==='monthlyBS'?[...new Set(items.filter(r=>r.role!=='summary').map(r=>r.account))].filter(a=>!parentItems.some(r=>r.account===a&&r.date===referenceMonth&&Number.isFinite(r.amount))):[];
- if(detailItems.length){warnings.push(TAG_DIMS[tagDim]+'別の内訳（'+new Set(detailItems.map(r=>key(r.account))).size+'科目・'+new Set(detailItems.map(r=>key(r.tagValue))).size+'件）は、科目合計とは別に保存し、科目合計には足しません。'+(tagCheck?.checked?'内訳の合計は '+tagCheck.checked+' 科目すべての月で科目合計と照合しました'+(tagCheck.dropped.size?'（合わない科目を除く）':'')+'。':'')+(type==='monthlyBS'&&tagDim==='party'?'取引先別の残高は確定値として回収・支払の確認に使います。':''));const missing=[...new Set(detailItems.map(r=>r.account))].filter(a=>!parentItems.some(r=>r.account===a));if(missing.length)warnings.push('科目合計行がないため、'+missing.join('・')+'の合計残高とBS全体の一致は保留します。取引先内訳を足して科目合計とは扱いません。');}
+ // 内訳を別に保存すること・照合の結果は、注意ではないので取込画面の「表示するタグ」の案内（reportStats.tagCheck）で示す
+ if(detailItems.length){const missing=[...new Set(detailItems.map(r=>r.account))].filter(a=>!parentItems.some(r=>r.account===a));if(missing.length)warnings.push('科目合計の行がない科目があります（'+missing.join('・')+'）。'+TAG_DIMS[tagDim]+'別の内訳を足して科目合計とはしないため、この科目の'+(type==='monthlyBS'?'残高とBS全体の一致':'金額')+'の確認は保留します。');}
  if(openingMissingAccounts.length)warnings.push('レビュー開始月の前月末（'+referenceMonth+'）の確定残高が '+openingMissingAccounts.length+'科目で不足しています。初月の増減照合は保留します。期首付きの通期BS、または前月末を含む月次BSを取り込んでください。');
  if(meta.periodValid&&cols.length&&E.monthRange(meta.start,meta.end).some(m=>!cols.some(c=>c.month===m)))warnings.push('帳票タイトルの期間に対して月見出しが不足しています。表示していない月を0円とは扱いません。');
  const declaredMonths=[...new Set(cols.length?cols.map(c=>c.month):rows.slice(h+1).map(r=>period(get(r,'date'),datedCfg)).filter(Boolean))].sort();

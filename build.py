@@ -31,7 +31,7 @@ NEW_SCRIPTS = [
     ('monthly-toc.js', 'root.ReviewFeedbackOrderUI='),
 ]
 # 追加のスタイル（最初の <style> の末尾に足す）
-STYLES = ['v37.css', 'v39-tags.css', 'v39-monthly.css', 'v39-perf.css', 'v39-feedback.css']
+STYLES = ['v37.css', 'v39-tags.css', 'v39-monthly.css', 'v39-perf.css', 'v39-app.css', 'v39-feedback.css']
 # (説明, 元の文字列, 新しい文字列)
 PATCHES = [
     ('version label', '<span class="version">MULTI-COMPANY · 3.6.0</span>', f'<span class="version">MULTI-COMPANY · {VERSION}</span>'),

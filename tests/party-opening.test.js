@@ -173,7 +173,13 @@ test('取引先内訳つきBSの確定期首も消込で繰り越し、当期に
  assert.ok(['normal','settled'].includes(blue.status),blue.status);
  assert.ok(!po(r).alerts.some(a=>a.label==='(株)ブルースカイ'));
  assert.equal(red.openingBasis,'exact');assert.equal(red.status,'long');
- const alert=po(r).alerts.find(a=>a.label==='(株)レッドストーン');assert.match(alert.text,/期首時点の残高（BS内訳） 220,000円/);
+ // 推定と確定が同じなら、推定の日付つきの内訳（2025-08-28の請求）をそのまま使う
+ const alert=po(r).alerts.find(a=>a.label==='(株)レッドストーン');assert.match(alert.text,/2025-08-28の請求・売上 220,000円/);
+ // 過去の仕訳がなく確定値だけの取引先は、期首時点の1件として示す
+ const s2=fresh({prior:false});s2.datasets.monthlyBS=s.datasets.monthlyBS;
+ const r2=analyze(s2),red2=po(r2).alerts.find(a=>a.label==='(株)レッドストーン');
+ assert.equal(party(r2,'売掛金','(株)ブルースカイ').status,'normal','内訳の分からない期首は古いものから消し込む');
+ assert.match(red2.text,/期首時点の残高（BS内訳） 220,000円/);
 });
 test('読込範囲の始めの入金でも、手数料の別行・分割入金は読込範囲より前の分とみなさない',()=>{
  const s=fresh();
@@ -344,4 +350,26 @@ test('前受・前払は、次の請求・仕入に当て、長く未回収・�
  for(const x of s2.datasets.monthlyBS)if(x.account==='買掛金'&&!x.tagDimension)x.amount+=x.opening||x.date<'2026-02'?-200000:0;
  const r2=analyze(s2);
  assert.ok(!po(r2).alerts.some(x=>x.label==='(株)テスト前払'),'推定がBSより多い科目で、読込範囲より前の仮定に頼る取引先は判定しない');
+});
+test('毎月同じ金額の請求がある取引先に確定期首（BS内訳）があっても、ふだん通りの回収を長く未回収にしない',()=>{
+ const s=fresh(),base=s.datasets.prior.find(x=>x.debit==='売掛金'),cur=s.datasets.current.find(x=>x.credit==='売掛金');
+ const row=(src,id,date,debit,credit,amount)=>({...src,id,journalId:id,line:88000+Number(id.slice(1)),date,debit,credit,debitAmount:amount,creditAmount:amount,debitParty:'(株)テスト顧問先',creditParty:'(株)テスト顧問先',party:'',sourceFields:[]});
+ // 毎月5日に500,000円を請求し、2か月後の10日に入金（期首には11月・12月分の2件が残る）
+ let n=1;for(let m=9;m<=12;m++){const mm=String(m).padStart(2,'0');s.datasets.prior.push(row(base,'T'+n++,`2025-${mm}-05`,'売掛金','売上高',500000));}
+ for(const d of ['2025-11-10','2025-12-10'])s.datasets.prior.push(row(base,'T'+n++,d,'普通預金','売掛金',500000));
+ for(let m=1;m<=9;m++){const mm=String(m).padStart(2,'0');s.datasets.current.push(row(cur,'T'+n++,`2026-${mm}-05`,'売掛金','売上高',500000),row(cur,'T'+n++,`2026-${mm}-10`,'普通預金','売掛金',500000));}
+ for(const x of s.datasets.monthlyBS)if(x.account==='売掛金'&&!x.tagDimension)x.amount+=1000000;
+ const open=s.datasets.monthlyBS.find(x=>x.account==='売掛金'&&x.opening);
+ s.datasets.monthlyBS.push({...open,tagDimension:'party',tagValue:'(株)テスト顧問先',amount:1000000});
+ const r=analyze(s),p=party(r,'売掛金','(株)テスト顧問先');
+ assert.equal(p.openingBasis,'exact');assert.equal(p.opening,1000000);
+ assert.equal(p.status,'normal');assert.ok(!po(r).alerts.some(a=>a.label==='(株)テスト顧問先'));
+});
+test('重なった過去資料の片方を参照から除外すると、残った資料だけで推定に戻る',()=>{
+ const s=fresh(),dup=s.datasets.prior.filter(x=>x.date>='2025-07-01').map(x=>({...x,id:String(5000+Number(x.id)),journalId:String(5000+Number(x.journalId)),source:'copy.csv',importSource:'csv:copy',historySource:'hsrc:copy'}));
+ s.datasets.prior=[...s.datasets.prior,...dup];
+ assert.equal(analyze(s).financial.partyOpening.window.start,null,'重なっている間は使わない');
+ s.history.sources['hsrc:copy']={name:'copy',status:'exclude',note:''};
+ const r=analyze(s);
+ assert.equal(po(r).window.start,'2025-01');assert.equal(acct(r,'売掛金').status,'matched');
 });

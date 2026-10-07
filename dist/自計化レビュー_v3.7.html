@@ -3589,7 +3589,9 @@ function signature(rs){return JSON.stringify(rs.map(r=>['date','debit','credit',
 function journals(session){
  const raw=[];for(const type of ['prior','current'])for(const rs of E.journalGroups(session.datasets?.[type]||[]))raw.push({type,rows:rs,date:rs[0]?.date,journalKey:E.journalKey(rs[0]),source:source(rs[0]),reasons:[]});
  const content=new Map();for(const g of raw){const s=signature(g.rows),gs=content.get(s)||[];gs.push(g);content.set(s,gs);}
- for(const gs of content.values())if(new Set(gs.map(g=>g.source)).size>1)for(const g of gs)g.reasons.push('資料間で同内容の仕訳が重なっています。');
+ // 参照から除外した過去資料は、重なりの判定に入れない（除外したあとに残った資料を重なりとして止めない）
+ const excluded=g=>g.type==='prior'&&g.rows.some(r=>sourceStatus(session,r)==='exclude');
+ for(const gs of content.values()){const live=gs.filter(g=>!excluded(g));if(new Set(live.map(g=>g.source)).size>1)for(const g of live)g.reasons.push('資料間で同内容の仕訳が重なっています。');}
  for(const g of raw){
   const rs=g.rows,net=sum(rs.map(r=>r.debitAmount-r.creditAmount));
   if(!/^\d{4}-\d{2}-\d{2}$/.test(g.date||'')||!Number.isFinite(Date.parse(g.date+'T00:00:00Z')))g.reasons.push('取引日が未確定です。');
@@ -3853,9 +3855,13 @@ const SEVERITY={long:0,late:1,credit:2,normal:3,settled:4,unknown:5};
 // 金額・借貸の誤りは、その仕訳が触れる科目だけを止める（他の科目の行を隠すことはないため）。
 // 読取エラー・資料間の重複・参照除外・番号の未確定などは、その月のすべての科目を止める。
 const LOCAL=new Set(['借貸金額が円単位の安全な整数として確定できません。','仕訳全体の借貸が一致しません。','マイナス金額の仕訳があります。']);
+const EXCLUDED='参照から除外された過去資料です。';
 function monthStates(session,js){
- const present=new Set(),bad=new Map(),local=new Map(),quiet=new Set();
- for(const g of js.all){const m=month(g.date);if(!/^\d{4}-\d{2}$/.test(m))continue;present.add(m);if(g.valid)continue;
+ const present=new Set(),bad=new Map(),local=new Map(),quiet=new Set(),excluded=new Set();
+ for(const g of js.all){const m=month(g.date);if(!/^\d{4}-\d{2}$/.test(m))continue;
+  // 参照から除外した資料の仕訳は使わないので、ないものとして扱う（残った資料だけで月がそろっていれば読める）
+  if(g.reasons.includes(EXCLUDED)){excluded.add(m);continue;}
+  present.add(m);if(g.valid)continue;
   if(g.reasons.every(r=>LOCAL.has(r))){const l=local.get(m)||[];l.push({accounts:new Set(g.rows.flatMap(r=>[key(r.debit),key(r.credit)])),reasons:g.reasons});local.set(m,l);}
   else{const l=bad.get(m)||[];l.push(...g.reasons);bad.set(m,l);}}
  for(const i of session.imports||[]){
@@ -3867,11 +3873,11 @@ function monthStates(session,js){
  const forAccount=account=>{
   const k=account==null?null:key(account),b=new Map(bad);
   if(k!==null)for(const [m,l] of local)for(const x of l)if(x.accounts.has(k))b.set(m,[...(b.get(m)||[]),...x.reasons]);
-  return {usable:m=>!b.has(m)&&(present.has(m)||quiet.has(m)),bad:b,present,quiet};
+  return {usable:m=>!b.has(m)&&(present.has(m)||quiet.has(m)),bad:b,present,quiet,excluded};
  };
  return {forAccount};
 }
-function stopReason(ms,m){return ms.bad.has(m)?uniq(ms.bad.get(m)).join(' '):ms.present.has(m)||ms.quiet.has(m)?'':'仕訳が読み込まれていません。';}
+function stopReason(ms,m){return ms.bad.has(m)?uniq(ms.bad.get(m)).join(' '):ms.present.has(m)||ms.quiet.has(m)?'':ms.excluded.has(m)?'参照から除外した過去資料の仕訳しかありません。':'仕訳が読み込まれていません。';}
 // 期首の前月末から過去へ連続して読める範囲。途切れた月と理由も返す。
 function historyWindow(ms,prev){
  let from=null,n=0,m=prev;
@@ -3905,8 +3911,15 @@ function simulate(js,account,kind,win,through,start,opt={}){
  const state=(k,label)=>{let p=parties.get(k);if(!p)parties.set(k,p={party:k,label:k?label:'未選択',untagged:!k,queue:[],credit:0,preWindow:0,preWindowRows:[],lags:[],matchedIn:[],matchedOut:[],exactMatches:0,hadIncrease:false,openingSettled:0,unmatchedDecrease:0,unmatchedEvents:[],totalDecrease:0,flows:{},increase:0,decrease:0,histIncrease:0,rows:[],opening:openingTaken?0:null,openItemsAtOpening:openingTaken?[]:null,creditAtOpening:0,firstDate:null,lastDate:null,currentEvents:0,openingBasis:null});else if(k&&label&&p.label==='未選択')p.label=label;return p;};
  const takeOpening=()=>{
   if(openingTaken)return;openingTaken=true;
-  // 確定期首のある取引先は、その金額を期首時点の1件として置き直す（推定の積み上げは使わない）
-  for(const [k,x] of override){const p=state(k,x.label);p.estimatedOpening=total(p.queue.map(i=>i.amount))-p.credit;p.queue=x.amount>0?[{date:openingDate,amount:x.amount,original:x.amount,preWindow:false,exactAdjust:true,row:null}]:[];p.credit=x.amount<0?-x.amount:0;p.preWindow=0;p.openingBasis='exact';p.exactSource=x.source;}
+  // 確定期首のある取引先：推定の日付つきの未消込は確定額の範囲で残し（多すぎる分は古いものから減らす）、
+  // 足りない分だけを期首時点の1件として先頭に置く。推定と確定が同じなら、日付つきの内訳をそのまま使う。
+  for(const [k,x] of override){
+   const p=state(k,x.label);p.estimatedOpening=total(p.queue.map(i=>i.amount))-p.credit;
+   const items=x.amount>0&&p.credit===0?p.queue.map(i=>({...i})):[];let sum=total(items.map(i=>i.amount));
+   while(sum>Math.max(0,x.amount)&&items.length){const it=items[0],cut=Math.min(it.amount,sum-Math.max(0,x.amount));it.amount-=cut;sum-=cut;if(!it.amount)items.shift();}
+   if(x.amount>sum)items.unshift({date:openingDate,amount:x.amount-sum,original:x.amount-sum,preWindow:false,exactAdjust:true,row:null});
+   p.queue=items;p.credit=x.amount<0?-x.amount:0;p.preWindow=0;p.openingBasis='exact';p.exactSource=x.source;
+  }
   for(const p of parties.values()){p.opening=total(p.queue.map(i=>i.amount))-p.credit;p.openItemsAtOpening=p.queue.map(i=>({...i}));p.creditAtOpening=p.credit;for(const i of p.queue)i.atOpening=true;}
  };
  const add=(p,e,amount)=>{
@@ -3919,7 +3932,8 @@ function simulate(js,account,kind,win,through,start,opt={}){
  const take=(p,i,e)=>{const it=p.queue.splice(i,1)[0];used(p,it,it.amount,e);settle(p,it,e);return it;};
  const consume=(p,e,amount,history)=>{
   const lead=history&&!!leadEnd&&e.month<=leadEnd;
-  if(!p.untagged){
+  // 内訳の分からない確定期首（期首時点の1件）が先頭にある間は、古いものから消し込む（同額の新しい請求を先に当てない）
+  if(!p.untagged&&!p.queue[0]?.exactAdjust){
    // 同じ金額の未消込（古い順）
    const i=p.queue.findIndex(it=>it.amount===amount);
    if(i>=0){take(p,i,e);p.exactMatches++;return;}

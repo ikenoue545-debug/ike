@@ -31,7 +31,9 @@ function signature(rs){return JSON.stringify(rs.map(r=>['date','debit','credit',
 function journals(session){
  const raw=[];for(const type of ['prior','current'])for(const rs of E.journalGroups(session.datasets?.[type]||[]))raw.push({type,rows:rs,date:rs[0]?.date,journalKey:E.journalKey(rs[0]),source:source(rs[0]),reasons:[]});
  const content=new Map();for(const g of raw){const s=signature(g.rows),gs=content.get(s)||[];gs.push(g);content.set(s,gs);}
- for(const gs of content.values())if(new Set(gs.map(g=>g.source)).size>1)for(const g of gs)g.reasons.push('資料間で同内容の仕訳が重なっています。');
+ // 参照から除外した過去資料は、重なりの判定に入れない（除外したあとに残った資料を重なりとして止めない）
+ const excluded=g=>g.type==='prior'&&g.rows.some(r=>sourceStatus(session,r)==='exclude');
+ for(const gs of content.values()){const live=gs.filter(g=>!excluded(g));if(new Set(live.map(g=>g.source)).size>1)for(const g of live)g.reasons.push('資料間で同内容の仕訳が重なっています。');}
  for(const g of raw){
   const rs=g.rows,net=sum(rs.map(r=>r.debitAmount-r.creditAmount));
   if(!/^\d{4}-\d{2}-\d{2}$/.test(g.date||'')||!Number.isFinite(Date.parse(g.date+'T00:00:00Z')))g.reasons.push('取引日が未確定です。');

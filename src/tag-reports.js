@@ -67,12 +67,22 @@ function apply(session,type,items,{importSource,mode='replace',record}){
    if(r.tagDimension===dim)return false;
    return !stale(r);
   });
-  session.datasets[type]=ordered(session.datasets[type],keep,datasetRows);
+  session.datasets[type]=ordered(session.datasets[type],keep,reuse(session.datasets[type],datasetRows));
   session.tagReports=session.tagReports.filter(r=>r.type!==type||r.tagDimension!==dim&&!stale(r)).concat(tagRows);
   session.imports=(session.imports||[]).filter(i=>i.type!==type||slotOf(i)!==dim);
  }
  if(record)session.imports.push({...record,tagDimension:dim});
  return p;
+}
+// 科目合計がすべての月で読込済みと同じ科目は、読込済みの行をそのまま使う。
+// 確認結果のIDは科目合計の行（ファイル名・行番号を含む）から作るため、別のタグの帳票を足しただけでIDを変えない。
+function reuse(old,fresh){
+ const group=rows=>{const m=new Map();for(const r of rows){if(r.tagDimension)continue;const k=key(r.account);if(!m.has(k))m.set(k,[]);m.get(k).push(r);}return m;};
+ const cell=r=>[r.date,r.opening?1:0,r.amount,r.unit].join('|'),before=group(old),same=new Set();
+ for(const [k,b] of group(fresh)){const a=before.get(k),s=new Set((a||[]).map(cell));if(a&&a.length===b.length&&s.size===a.length&&b.every(r=>s.has(cell(r))))same.add(k);}
+ if(!same.size)return fresh;
+ const done=new Set();
+ return fresh.flatMap(r=>{const k=key(r.account);if(r.tagDimension||!same.has(k))return [r];if(done.has(k))return [];done.add(k);return before.get(k);});
 }
 // 科目の並びは新しい帳票の順。新しい帳票にない科目は、前の帳票で直前にあった科目の後ろに置く。
 // 科目ごとに合計の行を先、タグの行を後にする（科目の並びは最初に出た行で決まるため）。

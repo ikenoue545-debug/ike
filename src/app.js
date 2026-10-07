@@ -343,7 +343,8 @@ function tagVariantNotice(p,preview){
  const T=window.ReviewTagReports;if(!T||!E.reportType(p.type)||!preview.items.length)return '';
  const pl=T.plan(session,p.type,preview.items,{mode:p.mode}),label=pl.dim?T.DIMS[pl.dim]:'',out=[];
  const others=T.materials(session).find(m=>m.type===p.type)?.dims.filter(d=>d.loaded&&d.dim!==pl.dim).map(d=>d.label)||[];
- out.push(pl.dim?`<strong>表示するタグ：${esc(label)}</strong>　${esc(label)}別の内訳 ${pl.details.toLocaleString()}行（${pl.detailAccounts}科目）と、科目合計 ${pl.parents.toLocaleString()}行を分けて保存します。内訳は科目合計に足しません。`:`<strong>表示するタグ：なし</strong>　科目合計 ${pl.parents.toLocaleString()}行を保存します。`);
+ const tc=preview.reportStats?.tagCheck,tags=new Set(preview.items.filter(r=>r.tagDimension).map(r=>String(r.tagValue).replace(/\s/g,''))).size;
+ out.push(pl.dim?`<strong>表示するタグ：${esc(label)}</strong>　${esc(label)}別の内訳 ${pl.details.toLocaleString()}行（${pl.detailAccounts}科目・${tags}件）と、科目合計 ${pl.parents.toLocaleString()}行を分けて保存します。内訳は科目合計に足しません。${tc?.checked?`内訳の合計は ${tc.checked}科目すべての月で科目合計と照合しました${tc.dropped?.length?'（合わない科目を除く）':''}。`:''}${pl.dim==='party'&&E.reportType(p.type)==='monthlyBS'?'取引先別の残高は確定した残高として、回収・支払の確認に使います。':''}`:`<strong>表示するタグ：なし</strong>　科目合計 ${pl.parents.toLocaleString()}行を保存します。`);
  if(p.mode==='replace')out.push(others.length?`読込済みの ${esc(others.join('・'))}別 の内訳は残します（置き換えるのは${pl.dim?'同じ「'+esc(label)+'別」':'科目合計'}だけです）。`:'');
  if(pl.conflicts.length){const c=pl.conflicts[0];out.push(`読込済みの帳票と科目合計が ${pl.conflicts.length}か所 違います（例：${esc(c.account)} ${esc(c.date)} ${money(c.old)} → ${money(c.new)}）。この帳票の値を使います。freeeの出力時点が違う可能性があります。`);}
  if(pl.droppedAccounts.length)out.push(`読込済みの帳票にあってこの帳票にない科目（${esc(pl.droppedAccounts.slice(0,4).join('・'))}${pl.droppedAccounts.length>4?' ほか':''}）は、0円でないため外します。`);

@@ -7,6 +7,7 @@
     "build": "python3 build.py",
     "fixtures": "node tests/make-fixtures.js",
     "test": "node --test tests/party-opening.test.js tests/variance.test.js",
-    "test:ui": "node tests/ui-smoke.js && node tests/ui-import.js"
+    "test:ui": "node tests/ui-smoke.js && node tests/ui-import.js",
+    "test:tags": "node --test tests/tag-reports.test.js && node tests/ui-tags-import.js"
   }
 }

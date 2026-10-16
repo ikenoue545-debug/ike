@@ -16,6 +16,7 @@ class Settings:
     token_hours: int
     max_upload_mb: int
     seed_demo: bool
+    seed_users_only: bool = False  # デモの会社は入れず、デモ用の利用者だけ作る（個人利用の初回起動）
 
     @property
     def is_dev(self) -> bool:
@@ -31,6 +32,7 @@ def load_settings() -> Settings:
         token_hours=int(os.environ.get('HOJINZEI_TOKEN_HOURS', '12')),
         max_upload_mb=int(os.environ.get('HOJINZEI_MAX_UPLOAD_MB', '20')),
         seed_demo=os.environ.get('HOJINZEI_SEED_DEMO', '1' if env == 'dev' else '0') == '1',
+        seed_users_only=os.environ.get('HOJINZEI_SEED_USERS_ONLY', '0') == '1',
     )
 
 

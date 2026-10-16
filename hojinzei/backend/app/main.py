@@ -45,5 +45,9 @@ def create_app(settings: Optional[Settings] = None, seed: Optional[bool] = None)
         from .seed import seed_demo
         with app.state.db.SessionLocal() as db:
             seed_demo(db, settings)
+    elif settings.seed_users_only:
+        from .seed import seed_users
+        with app.state.db.SessionLocal() as db:
+            seed_users(db)
     return app
 

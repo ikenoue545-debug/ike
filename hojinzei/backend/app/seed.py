@@ -86,6 +86,12 @@ def _company(db: Session, users: dict[str, User], **kw) -> Company:
     return c
 
 
+def seed_users(db: Session) -> None:
+    """会社のデータは入れず、利用者（担当者・レビュー担当者・管理者）だけ作る。"""
+    _users(db)
+    db.commit()
+
+
 def seed_demo(db: Session, settings: Settings) -> None:
     users = _users(db)
     if db.scalar(select(Company.id).limit(1)) is not None:

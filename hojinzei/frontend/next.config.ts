@@ -4,6 +4,8 @@ import type { NextConfig } from "next";
 const backend = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 
 const nextConfig: NextConfig = {
+  // Windows 向けの配布物では、Node.js と必要な部品だけを1つのフォルダにまとめる
+  output: "standalone",
   async rewrites() {
     return [{ source: "/api/:path*", destination: `${backend}/api/:path*` }];
   },

@@ -1,0 +1,98 @@
+name: Windows package
+
+# hojinzei/ を変更したときに、Windows 用の ZIP（Python・Node.js 不要）を組み立てて、
+# リリース「windows-latest」に載せる。組み立てた ZIP は、起動して動くことまで確かめる。
+on:
+  push:
+    paths:
+      - "hojinzei/**"
+      - ".github/workflows/windows-package.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: バックエンドを exe にまとめる
+        working-directory: hojinzei/backend
+        run: |
+          python -m pip install --quiet -r requirements.txt pyinstaller
+          pyinstaller --noconfirm --onedir --name houjinzei-backend --paths . \
+            --add-data "taxengine/rules/data;taxengine/rules/data" --add-data "../samples;samples" \
+            --collect-submodules uvicorn --collect-submodules app --collect-submodules taxengine \
+            --hidden-import sqlalchemy.dialects.sqlite --exclude-module psycopg --exclude-module tkinter \
+            run_backend.py
+
+      - name: 画面を組み立てる
+        working-directory: hojinzei/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: ZIP の中身をそろえる
+        run: |
+          P=package/hojinzei-windows
+          mkdir -p $P/backend $P/frontend/.next
+          cp -r hojinzei/backend/dist/houjinzei-backend/. $P/backend/
+          cp -r hojinzei/frontend/.next/standalone/. $P/frontend/
+          cp -r hojinzei/frontend/.next/static $P/frontend/.next/static
+          cp "$(which node)" $P/frontend/node.exe
+          cp hojinzei/packaging/start.bat $P/start.bat
+          cp "hojinzei/packaging/はじめに読む.txt" "$P/はじめに読む.txt"
+          ls $P $P/backend | head -30
+
+      - name: 起動して動くことを確かめる
+        run: |
+          P="$PWD/package/hojinzei-windows"
+          cd "$P/backend"
+          HOJINZEI_HOME="$P" HOJINZEI_SEED_DEMO=1 ./houjinzei-backend.exe > "$P/../backend.log" 2>&1 &
+          cd "$P/frontend"
+          PORT=3000 HOSTNAME=127.0.0.1 ./node.exe server.js > "$P/../frontend.log" 2>&1 &
+          for i in $(seq 1 90); do curl -sf http://127.0.0.1:3000/api/health && break; sleep 1; done
+          curl -sf http://127.0.0.1:3000/api/health
+          TOKEN=$(curl -s -X POST http://127.0.0.1:3000/api/auth/login -H 'content-type: application/json' \
+            -d '{"email":"staff@example.com","password":"demo-pass-2026"}' | python -c "import json,sys;print(json.load(sys.stdin)['token'])")
+          curl -s http://127.0.0.1:3000/api/companies -H "Authorization: Bearer $TOKEN" | python -c "import json,sys;d=json.load(sys.stdin);assert len(d)==3, d;print([c['name'] for c in d])"
+          curl -sf -o /dev/null -w "login page %{http_code}\n" http://127.0.0.1:3000/login
+          CSS=$(ls "$P/frontend/.next/static/css" | head -1)
+          curl -sf -o /dev/null -w "css %{http_code}\n" "http://127.0.0.1:3000/_next/static/css/$CSS"
+          curl -sf -o /tmp/x.xlsx -w "xlsx %{http_code} %{size_download}\n" http://127.0.0.1:3000/api/fiscal-years/1/export.xlsx -H "Authorization: Bearer $TOKEN"
+          test -f "$P/data/houjinzei.db"
+          taskkill //F //IM houjinzei-backend.exe //T || true
+          taskkill //F //IM node.exe //T || true
+          rm -rf "$P/data"
+
+      - name: ZIP にする
+        run: |
+          cd package
+          7z a -tzip ../hojinzei-windows.zip hojinzei-windows > /dev/null
+          ls -l ../hojinzei-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hojinzei-windows
+          path: hojinzei-windows.zip
+
+      - name: リリースに載せる
+        if: github.ref_type == 'branch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete windows-latest --yes --cleanup-tag || true
+          gh release create windows-latest hojinzei-windows.zip --target "${{ github.sha }}" --prerelease \
+            --title "Windows 用（ZIP を展開して start.bat を押すだけ）" \
+            --notes "Python・Node.js のインストールは不要です。展開して start.bat を押してください。自動で組み立てたもので、起動確認済み（Windows サーバー上）。"

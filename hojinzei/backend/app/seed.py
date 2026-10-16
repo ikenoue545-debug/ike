@@ -24,7 +24,7 @@ from .services.inputs import validate_section
 from .services.suggestions import sync_candidates
 from .services.trial_balance import analyze
 
-SAMPLES = Path(__file__).resolve().parents[2] / 'samples'
+SAMPLES = Path(os.environ.get('HOJINZEI_SAMPLES_DIR') or Path(__file__).resolve().parents[2] / 'samples')
 
 
 def _users(db: Session) -> dict[str, User]:

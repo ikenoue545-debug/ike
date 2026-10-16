@@ -1,0 +1,23 @@
+{
+  "id": "national_tax_rounding",
+  "title": "国税の端数計算",
+  "basis": "fy_end",
+  "description": "課税標準は1,000円未満切捨て、確定金額は100円未満切捨て。",
+  "versions": [
+    {
+      "version": "standard",
+      "valid_from": "1900-01-01",
+      "valid_to": null,
+      "applies_to": "法人税・地方法人税・防衛特別法人税",
+      "conditions": "",
+      "values": {"tax_base_unit": 1000, "tax_amount_unit": 100},
+      "sources": [
+        {"title": "別表一・次葉一・次葉二の様式（金額欄の「000」「00」表示）", "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2026/pdf/01-01-a.pdf", "provisions": "国税通則法第118条第1項、第119条第1項", "checked": "課税標準欄（30・49・67・69・74〜76・80・81）が千円単位、確定税額欄（13〜15・38〜40・57〜59）が百円単位"}
+      ],
+      "status": "source_checked",
+      "checked_by": "Claude（AI）による一次資料との照合",
+      "checked_at": "2026-10-16",
+      "expert_review": "未"
+    }
+  ]
+}

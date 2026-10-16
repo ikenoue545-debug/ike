@@ -1,0 +1,37 @@
+{
+  "id": "return_forms",
+  "title": "法人税申告書別表の様式の版",
+  "basis": "fy_end",
+  "description": "画面の別表プレビューの行番号は、この版の様式に合わせている。",
+  "versions": [
+    {
+      "version": "R7.4.1以後終了",
+      "valid_from": "2025-04-01",
+      "valid_to": "2026-03-31",
+      "applies_to": "令和7年4月1日以後終了事業年度等分",
+      "conditions": "防衛特別法人税の欄がない旧様式。行番号の対応を確認していないため未対応。",
+      "values": {},
+      "sources": [],
+      "status": "unverified",
+      "checked_by": "",
+      "checked_at": "",
+      "expert_review": "未"
+    },
+    {
+      "version": "R8.4.1以後終了",
+      "valid_from": "2026-04-01",
+      "valid_to": null,
+      "applies_to": "令和8年4月1日以後終了事業年度等分",
+      "conditions": "別表一（三枚）・二・四・五(一)・五(二)・六(一)・七(一)・十五",
+      "values": {"label": "令和8年4月1日以後終了事業年度等分"},
+      "sources": [
+        {"title": "令和8年4月以降に提供する法人税等各種別表関係（国税庁）", "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2026/01.htm", "provisions": "", "checked": "各別表の行番号・計算式・記載要領"}
+      ],
+      "status": "source_checked",
+      "checked_by": "Claude（AI）による一次資料との照合",
+      "checked_at": "2026-10-16",
+      "expert_review": "未",
+      "notes": ["この版より前の様式（令和8年3月31日以前終了事業年度）は未対応"]
+    }
+  ]
+}

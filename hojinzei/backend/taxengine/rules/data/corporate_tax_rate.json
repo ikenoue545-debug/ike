@@ -1,0 +1,75 @@
+{
+  "id": "corporate_tax_rate",
+  "title": "法人税の税率（普通法人・通算法人以外）",
+  "basis": "fy_start",
+  "description": "別表一次葉二「74」〜「79」。中小法人の年800万円以下の部分には租税特別措置法第42条の3の2の軽減税率を適用する。",
+  "versions": [
+    {
+      "version": "2019-04",
+      "valid_from": "2019-04-01",
+      "valid_to": "2025-03-31",
+      "applies_to": "普通法人（通算法人を除く）",
+      "conditions": "中小法人（期末資本金1億円以下で大法人の100%子会社等でないもの）の所得のうち年800万円以下の部分は15%。適用除外事業者は19%。",
+      "values": {
+        "standard_rate": "0.232",
+        "sme_threshold_annual": 8000000,
+        "sme_rate": "0.15",
+        "sme_rate_tekiyo_jogai": "0.19",
+        "sme_high_income_rate": null,
+        "sme_high_income_annual": null
+      },
+      "sources": [
+        {"title": "令和7年度 法人税関係法令の改正の概要（国税庁）法人税率一覧の「改正前」欄", "url": "https://www.nta.go.jp/publication/pamph/hojin/kaisei_gaiyo2025/pdf/A.pdf", "provisions": "法人税法第66条第1項・第2項、租税特別措置法第42条の3の2", "checked": "本則23.2%（19%）、改正前の特例税率15%、適用除外事業者19%"}
+      ],
+      "status": "source_checked",
+      "checked_by": "Claude（AI）による一次資料との照合",
+      "checked_at": "2026-10-16",
+      "expert_review": "未"
+    },
+    {
+      "version": "2025-04",
+      "valid_from": "2025-04-01",
+      "valid_to": "2027-03-31",
+      "applies_to": "普通法人（通算法人を除く）",
+      "conditions": "中小法人の所得のうち年800万円以下の部分は15%。ただし所得金額が年10億円（月数按分）を超える事業年度は17%。適用除外事業者は19%。",
+      "values": {
+        "standard_rate": "0.232",
+        "sme_threshold_annual": 8000000,
+        "sme_rate": "0.15",
+        "sme_rate_tekiyo_jogai": "0.19",
+        "sme_high_income_rate": "0.17",
+        "sme_high_income_annual": 1000000000
+      },
+      "sources": [
+        {"title": "令和7年度 法人税関係法令の改正の概要（国税庁）3 中小企業者等の法人税率の特例の見直し", "url": "https://www.nta.go.jp/publication/pamph/hojin/kaisei_gaiyo2025/pdf/A.pdf", "provisions": "租税特別措置法第42条の3の2第1項・第2項、改正法附則第39条", "checked": "令和7年4月1日以後開始事業年度から。所得年10億円超は17%。適用期限2年延長"},
+        {"title": "別表一の記載の仕方 4⑼（令和8年4月1日以後終了事業年度等分）", "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2026/pdf/01-01-ki.pdf", "provisions": "別表一次葉二「77」", "checked": "15%・17%・19%の使い分け、10億円の月数按分"},
+        {"title": "令和8年度 法人税関係法令の改正の概要（国税庁）", "url": "https://www.nta.go.jp/publication/pamph/hojin/kaisei_gaiyo2026/pdf/A.pdf", "provisions": "", "checked": "中小企業者等の法人税率の特例に改正がないこと（目次・中小企業税制の見直しの項）"}
+      ],
+      "status": "source_checked",
+      "checked_by": "Claude（AI）による一次資料との照合",
+      "checked_at": "2026-10-16",
+      "expert_review": "未"
+    },
+    {
+      "version": "2027-04",
+      "valid_from": "2027-04-01",
+      "valid_to": null,
+      "applies_to": "普通法人（通算法人を除く）",
+      "conditions": "租税特別措置法第42条の3の2の適用期限（令和9年3月31日までに開始する事業年度）の後。延長の有無を確認するまで使わない。",
+      "values": {
+        "standard_rate": "0.232",
+        "sme_threshold_annual": 8000000,
+        "sme_rate": "0.19",
+        "sme_rate_tekiyo_jogai": "0.19",
+        "sme_high_income_rate": null,
+        "sme_high_income_annual": null
+      },
+      "sources": [],
+      "status": "unverified",
+      "checked_by": "",
+      "checked_at": "",
+      "expert_review": "未",
+      "notes": ["令和9年度税制改正の内容を一次資料で確認し、版を追加・更新してから使う"]
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "id": "entertainment_expenses",
+  "title": "交際費等の損金不算入（租税特別措置法第61条の4）",
+  "basis": "fy_start",
+  "description": "別表十五。中小法人は定額控除限度額（年800万円）と接待飲食費の50%のいずれか。資本金100億円超は全額不算入。",
+  "versions": [
+    {
+      "version": "2024-04",
+      "valid_from": "2024-04-01",
+      "valid_to": "2027-03-31",
+      "applies_to": "法人",
+      "conditions": "中小法人（期末資本金1億円以下等）：定額控除限度額（800万円×月数/12）と接待飲食費×50%の有利な方。資本金1億円超100億円以下：接待飲食費×50%。100億円超：0。",
+      "values": {
+        "sme_fixed_deduction_annual": 8000000,
+        "food_deductible_ratio": "0.5",
+        "food_ratio_capital_limit": 10000000000,
+        "sme_capital_limit": 100000000
+      },
+      "sources": [
+        {"title": "令和6年度 法人税関係法令の改正の概要 7 交際費等の損金不算入制度の見直し（国税庁）", "url": "https://www.nta.go.jp/publication/pamph/hojin/kaisei_gaiyo2024/pdf/A.pdf", "provisions": "租税特別措置法第61条の4第1項・第2項", "checked": "適用期限の3年延長、中小法人の選択、100億円超"},
+        {"title": "タックスアンサー No.5265 交際費等の範囲と損金不算入額の計算", "url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5265.htm", "provisions": "措法61の4、措令37の5", "checked": "中小法人の定額控除限度額の計算"},
+        {"title": "別表十五・記載の仕方（令和8年4月1日以後終了事業年度分）", "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2026/pdf/15-ki.pdf", "provisions": "別表十五「1」〜「9」", "checked": "行番号と計算式"}
+      ],
+      "status": "source_checked",
+      "checked_by": "Claude（AI）による一次資料との照合",
+      "checked_at": "2026-10-16",
+      "expert_review": "未",
+      "notes": ["令和6年3月31日以前に開始した事業年度の版は未登録", "定額控除限度額の月数按分で生じる1円未満の端数は切り捨てて表示（法令の明文を未確認）"]
+    },
+    {
+      "version": "2027-04",
+      "valid_from": "2027-04-01",
+      "valid_to": null,
+      "applies_to": "法人",
+      "conditions": "適用期限（令和9年3月31日までに開始する事業年度）の後。延長の有無を確認するまで使わない。",
+      "values": {},
+      "sources": [],
+      "status": "unverified",
+      "checked_by": "",
+      "checked_at": "",
+      "expert_review": "未"
+    }
+  ]
+}

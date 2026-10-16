@@ -1,0 +1,31 @@
+{
+  "id": "loss_carryforward",
+  "title": "青色欠損金の繰越控除（法人税法第57条）",
+  "basis": "fy_start",
+  "description": "別表七(一)。控除限度額は控除前所得金額の100%（中小法人等）又は50%。",
+  "versions": [
+    {
+      "version": "2018-04",
+      "valid_from": "2018-04-01",
+      "valid_to": null,
+      "applies_to": "青色申告書を提出した事業年度の欠損金",
+      "conditions": "各事業年度開始の日前10年以内（平成30年4月1日前に開始した事業年度の欠損金は9年以内）に開始した事業年度の欠損金。中小法人等は所得の100%、それ以外は50%まで。",
+      "values": {
+        "years_for_losses_from_2018_04": 10,
+        "years_for_losses_before_2018_04": 9,
+        "losses_new_period_from": "2018-04-01",
+        "sme_limit_ratio": "1",
+        "non_sme_limit_ratio": "0.5"
+      },
+      "sources": [
+        {"title": "タックスアンサー No.5762 青色申告書を提出した事業年度の欠損金の繰越控除", "url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5762.htm", "provisions": "法人税法第57条", "checked": "繰越期間10年（平成30年4月1日前開始事業年度の欠損金は9年）、中小法人等以外は50%"},
+        {"title": "別表七(一)・記載の仕方（令和8年4月1日以後終了事業年度分）", "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2026/pdf/07(01)-ki.pdf", "provisions": "別表七(一)「1」〜「5」", "checked": "損金算入限度額（50又は100/100）、当期控除額の計算順序"}
+      ],
+      "status": "source_checked",
+      "checked_by": "Claude（AI）による一次資料との照合",
+      "checked_at": "2026-10-16",
+      "expert_review": "未",
+      "notes": ["新設法人・再建中の法人の特例、災害損失欠損金、欠損金の繰戻し還付は未対応"]
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "id": "meal_expense_threshold",
+  "title": "交際費等から除かれる飲食費の1人当たりの金額基準",
+  "basis": "expense_date",
+  "description": "飲食費を参加者数で割った額がこの金額以下なら交際費等から除く（一定の書類の保存が要件）。",
+  "versions": [
+    {
+      "version": "before-2024-04",
+      "valid_from": "1900-01-01",
+      "valid_to": "2024-03-31",
+      "applies_to": "法人",
+      "conditions": "令和6年3月31日以前に支出した飲食費",
+      "values": {"per_person_limit": 5000},
+      "sources": [
+        {"title": "タックスアンサー No.5265（注）", "url": "https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5265.htm", "provisions": "措令37の5第1項", "checked": "令和6年3月31日以前の支出は5,000円以下"}
+      ],
+      "status": "source_checked",
+      "checked_by": "Claude（AI）による一次資料との照合",
+      "checked_at": "2026-10-16",
+      "expert_review": "未"
+    },
+    {
+      "version": "2024-04",
+      "valid_from": "2024-04-01",
+      "valid_to": null,
+      "applies_to": "法人",
+      "conditions": "令和6年4月1日以後に支出する飲食費",
+      "values": {"per_person_limit": 10000},
+      "sources": [
+        {"title": "令和6年度 法人税関係法令の改正の概要 7（国税庁）※1", "url": "https://www.nta.go.jp/publication/pamph/hojin/kaisei_gaiyo2024/pdf/A.pdf", "provisions": "措令37の5第1項、改正措令附則16", "checked": "1人当たり10,000円以下、令和6年4月1日以後の支出"}
+      ],
+      "status": "source_checked",
+      "checked_by": "Claude（AI）による一次資料との照合",
+      "checked_at": "2026-10-16",
+      "expert_review": "未"
+    }
+  ]
+}

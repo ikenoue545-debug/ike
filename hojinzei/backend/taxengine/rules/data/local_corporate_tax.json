@@ -1,0 +1,24 @@
+{
+  "id": "local_corporate_tax",
+  "title": "地方法人税の税率",
+  "basis": "fy_start",
+  "description": "別表一「28」〜「44」、次葉二「80」〜「83」。課税標準法人税額 × 税率。",
+  "versions": [
+    {
+      "version": "2019-10",
+      "valid_from": "2019-10-01",
+      "valid_to": null,
+      "applies_to": "法人税の納税義務がある内国法人",
+      "conditions": "課税標準法人税額（1,000円未満切捨て）× 10.3%",
+      "values": {"rate": "0.103"},
+      "sources": [
+        {"title": "別表一次葉二「82」（80）の10.3%相当額（令和8年4月1日以後終了事業年度等分）", "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2026/pdf/01-01-a.pdf", "provisions": "地方法人税法第10条", "checked": "様式上の税率10.3%"}
+      ],
+      "status": "source_checked",
+      "checked_by": "Claude（AI）による一次資料との照合",
+      "checked_at": "2026-10-16",
+      "expert_review": "未",
+      "notes": ["令和元年10月1日前に開始した課税事業年度（4.4%）の版は未登録"]
+    }
+  ]
+}

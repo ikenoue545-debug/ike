@@ -1,0 +1,45 @@
+{
+  "id": "defense_special_corporate_tax",
+  "title": "防衛特別法人税",
+  "basis": "fy_start",
+  "description": "別表一次葉一「45」〜「73」。基準法人税額（所得税額控除等を適用しない法人税額）から基礎控除額（年500万円）を控除した額 × 4%。",
+  "versions": [
+    {
+      "version": "before",
+      "valid_from": "1900-01-01",
+      "valid_to": "2026-03-31",
+      "applies_to": "—",
+      "conditions": "令和8年3月31日以前に開始した事業年度は課税事業年度に当たらない",
+      "values": {},
+      "sources": [
+        {"title": "令和7年度 法人税関係法令の改正の概要 2 防衛特別法人税の創設（国税庁）", "url": "https://www.nta.go.jp/publication/pamph/hojin/kaisei_gaiyo2025/pdf/E.pdf", "provisions": "防確法第11条、改正法附則第62条第1項", "checked": "令和8年4月1日以後に開始する事業年度が課税事業年度"}
+      ],
+      "status": "not_applicable",
+      "checked_by": "Claude（AI）による一次資料との照合",
+      "checked_at": "2026-10-16",
+      "expert_review": "未"
+    },
+    {
+      "version": "2026-04",
+      "valid_from": "2026-04-01",
+      "valid_to": null,
+      "applies_to": "各事業年度の所得に対する法人税を課される法人",
+      "conditions": "課税標準法人税額 ＝ 基準法人税額 − 基礎控除額（年500万円。1年未満は500万円÷12×月数）。税率4%。税額が0円でも確定申告書の提出が必要。中間申告は令和9年4月1日以後開始事業年度から。",
+      "values": {
+        "rate": "0.04",
+        "basic_deduction_annual": 5000000,
+        "interim_filing_from_fy_start": "2027-04-01"
+      },
+      "sources": [
+        {"title": "令和7年度 法人税関係法令の改正の概要 2 防衛特別法人税の創設（国税庁）", "url": "https://www.nta.go.jp/publication/pamph/hojin/kaisei_gaiyo2025/pdf/E.pdf", "provisions": "防確法第8条〜第25条", "checked": "4%、基礎控除年500万円、基準法人税額の定義、零申告"},
+        {"title": "防衛特別法人税に関するQ&A（国税庁）", "url": "https://www.nta.go.jp/publication/pamph/pdf/0025004-109_1.pdf", "provisions": "防確法第10条、第13条、第25条", "checked": "基礎控除の月数按分（1か月未満の端数は切上げ）、税額0でも申告が必要"},
+        {"title": "別表一次葉一（令和8年4月1日以後終了事業年度等分）", "url": "https://www.nta.go.jp/taxes/tetsuzuki/shinsei/annai/hojin/shinkoku/itiran2026/pdf/01-01-a.pdf", "provisions": "別表一次葉一「45」〜「73」", "checked": "行番号と計算式"}
+      ],
+      "status": "source_checked",
+      "checked_by": "Claude（AI）による一次資料との照合",
+      "checked_at": "2026-10-16",
+      "expert_review": "未",
+      "notes": ["基礎控除額の月数按分で生じる1円未満の端数の処理は法令の明文を未確認。エンジンは1円未満切捨てで表示し、短い事業年度では「要確認」を出す"]
+    }
+  ]
+}

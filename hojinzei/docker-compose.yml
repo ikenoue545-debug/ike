@@ -1,0 +1,15 @@
+# 開発用の PostgreSQL。本番ではパスワードを変え、ボリュームのバックアップを取ってください。
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: hojinzei
+      POSTGRES_PASSWORD: hojinzei_dev
+      POSTGRES_DB: hojinzei
+    ports:
+      - "5432:5432"
+    volumes:
+      - hojinzei-db:/var/lib/postgresql/data
+      - ./backend/db/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
+volumes:
+  hojinzei-db:

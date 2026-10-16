@@ -70,13 +70,21 @@ def cross_checks(ctx: Ctx, inp: ReturnInput) -> None:
                     '前期確定分の法人税等の額を確認してください。', [{'type': 'page', 'page': 'tax-inputs', 'section': 'payments'}])
 
     # 還付
-    refund = ctx.val('b1:24:value')
-    if refund:
-        ctx.finding('B1_REFUND', 'info', '申告', f'法人税の還付金額が {refund:,} 円あります',
-                    '所得税額控除の控除しきれない額、または中間納付額の還付です。',
+    income_tax_refund = ctx.val('b1:21:value') or 0
+    interim_refund = (ctx.val('b1:22:value') or 0) + (ctx.val('b1:42:value') or 0) + (
+        ctx.val('b1:61:value') or 0 if ctx.has('b1:61:value') else 0)
+    if income_tax_refund:
+        ctx.finding('B1_REFUND_INCOME_TAX', 'info', '申告', f'所得税額等の還付金額が {income_tax_refund:,} 円あります',
+                    '法人税額から控除しきれない所得税額は還付されます（法人税法第78条）。',
                     '別表一の「還付を受けようとする金融機関等」の欄を記入してください（本システムでは未入力）。'
-                    '会計上の未収還付法人税等の計上と、翌期の別表四の減算（「18」「19」）に注意してください。',
-                    [{'type': 'cell', 'key': 'b1:24:value'}])
+                    '翌期に還付金を収益に計上したときは、別表四「19」で減算します（益金不算入）。',
+                    [{'type': 'cell', 'key': 'b1:21:value'}])
+    if interim_refund:
+        ctx.finding('B1_REFUND_INTERIM', 'warning', '申告', f'中間納付額の還付が {interim_refund:,} 円あります',
+                    '中間納付額が確定税額を超えています。還付される額を会計で未収計上したか、別表五(一)に'
+                    '「未収還付法人税等」を記載するかの処理は自動化していません（別表五(二)の当期確定分は0円で計算しています）。',
+                    '会計処理を確認し、必要なら税務調整（別表四・別表五(一)）を入力してください。翌期に還付金を収益に計上したときは'
+                    '別表四「18」で減算します。', [{'type': 'cell', 'key': 'b1:22:value'}])
 
 
 def required_schedules(ctx: Ctx, inp: ReturnInput, defense_applicable: bool) -> list[dict]:

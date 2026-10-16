@@ -273,7 +273,7 @@ def test_07b_withholding_refund_when_deficit():
     assert v(r, 'b1:12:value') == 0
     assert v(r, 'b1:20:value') == 15_315
     assert v(r, 'b1:21:value') == 15_315
-    assert 'B1_REFUND' in codes(r, 'info')
+    assert 'B1_REFUND_INCOME_TAX' in codes(r, 'info')
     assert_balanced(r)
 
 
@@ -296,6 +296,15 @@ def test_07d_dividend_individual_method():
 
 
 # ---------------------------------------------------------------- 8 前期の税務調整項目を繰り越す法人
+def test_07e_interim_refund_is_flagged():
+    inp = base_input()
+    inp.taxes.interim_corporate_tax = 1_000_000  # 確定税額 888,000 より多い
+    r = compute_return(inp)
+    assert v(r, 'b1:15:value') == 0
+    assert v(r, 'b1:22:value') == 112_000
+    assert 'B1_REFUND_INTERIM' in codes(r, 'warning')
+
+
 def test_08_prior_adjustment_reversal():
     inp = base_input(adjustments=[Adjustment('a1', '減価償却超過額の当期認容額', '12', 'deduct', 'ryuho', 100_000,
                                              status='review', five1_key='depreciation_excess', five1_name='減価償却超過額',

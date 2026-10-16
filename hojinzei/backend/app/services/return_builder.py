@@ -5,8 +5,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import set_committed_value
 
 from taxengine.cells import Finding, Override
 from taxengine.engine import compute_return
@@ -167,7 +168,10 @@ def compute_for(db: Session, fy: FiscalYear) -> dict[str, Any]:
     data['counts']['warning_open'] = sum(1 for f in merged if f['severity'] == 'warning' and not f['acknowledged'])
     data['tb_totals'] = built.analysis.totals
     data['provision_charged_hint'] = built.analysis.provision_charged_hint
-    fy.last_computed_at = datetime.now(timezone.utc)
-    fy.critical_count = data['counts']['critical']
-    fy.warning_count = data['counts']['warning_open']
+    # 計算しただけでは「最終更新日」を変えない（updated_at をそのままにして件数だけ記録する）
+    values = {'last_computed_at': datetime.now(timezone.utc), 'critical_count': data['counts']['critical'],
+              'warning_count': data['counts']['warning_open']}
+    db.execute(update(FiscalYear).where(FiscalYear.id == fy.id).values(**values, updated_at=FiscalYear.updated_at))
+    for k, v in values.items():
+        set_committed_value(fy, k, v)
     return data

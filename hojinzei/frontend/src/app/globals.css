@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f6f7f9;
+  --foreground: #1f2937;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-feature-settings: "palt" 0;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 申告書プレビューの表 */
+.form-table td,
+.form-table th {
+  border-color: #cbd5e1;
+}

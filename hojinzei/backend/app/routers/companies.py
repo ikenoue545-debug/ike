@@ -20,6 +20,7 @@ from ..security import ROLES, current_user, get_company_for, get_db, get_fy_for,
 from ..services.accounts_master import category_options
 from ..services.company_info import check_corporate_number, local_tax_candidates, split_address
 from ..services.documents import DOC_KINDS
+from ..services.return_builder import compute_for
 from ..services.suggestions import TAX_FLAGS
 from ..services.workflow import STATUSES, STATUS_LABELS, can_set_manually
 from .common import company_dict, fy_dict, iso, user_dict
@@ -111,15 +112,22 @@ def list_companies(user: User = Depends(current_user), db: Session = Depends(get
     if user.role != 'admin':
         q = q.join(CompanyMember, CompanyMember.company_id == Company.id).where(CompanyMember.user_id == user.id)
     out = []
+    computed = False
     for c in db.scalars(q):
         fys = sorted(c.fiscal_years, key=lambda f: f.start_date)
         cur = fys[-1] if fys else None
+        if cur is not None and cur.last_computed_at is None:
+            # まだ一度も計算していない年度は、一覧の「未解決エラー数」のためにここで計算する
+            compute_for(db, cur)
+            computed = True
         out.append({
             **company_dict(c, db),
             'current_year': fy_dict(cur, c) if cur else None,
             'fiscal_year_count': len(fys),
             'last_updated': iso(max([c.updated_at] + [f.updated_at for f in fys])),
         })
+    if computed:
+        db.commit()
     return out
 
 

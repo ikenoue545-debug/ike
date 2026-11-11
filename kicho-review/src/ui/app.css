@@ -83,3 +83,5 @@ header button{color:var(--text)}
 .row>.badge:last-child{grid-column:3;grid-row:1;justify-self:end}
 .row .meta{grid-row:2}
 table.entries td:first-child{white-space:nowrap}
+.subtabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.subtabs button.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:600}
+h2.gap{margin-top:32px;padding-top:16px;border-top:1px solid var(--line)}

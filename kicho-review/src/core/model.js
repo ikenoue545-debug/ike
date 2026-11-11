@@ -14,7 +14,7 @@
     trend: '過去傾向との違い',           // その会社の過去の処理と違う
     evidence: '資料不足による確認依頼',  // データだけでは判定できず、資料の確認が要る
   };
-  const CHECKS = { DUP: '重複候補', ACCOUNT: '勘定科目の不一致', TAX: '税区分の不一致', RECUR: '定期取引の計上漏れ', AMOUNT: '金額の違い', DESC: '摘要・取引先の不足', TAXRULE: '税区分と制度の適用時期', CASH: '現金残高', RECON: '明細との照合' };
+  const CHECKS = { DUP: '重複候補', ACCOUNT: '勘定科目の不一致', TAX: '税区分の不一致', RECUR: '定期取引の計上漏れ', AMOUNT: '金額の違い', DESC: '摘要・取引先の不足', TAXRULE: '税区分と制度の適用時期', CASH: '現金残高', STALE: '滞留の可能性', NEGBAL: 'マイナス残高', OFFICER: '役員貸付金・借入金', INTEG: '残高の整合性', TREND: '月次の変動', MIX: '売上の内訳の変動', RECON: '明細との照合', SALES: '売上資料との照合', PAY: '給与資料との照合' };
   const TAX_STATUS = { unknown: '未登録', general: '課税事業者（本則課税）', simplified: '課税事業者（簡易課税）', special20: '課税事業者（2割特例）', exempt: '免税事業者' };
 
   function newCompany(name) {
@@ -28,12 +28,13 @@
       recurring: [],         // { id, name, account, partner, keyword, amount, tolerancePct, note }
       exceptions: [],        // 確認済みルール { id, check, partner, account, keyword, amountMin, amountMax, from, to, reason, by, at }
       cashOpening: { date: '', amount: null },
+      opening: { date: '', balances: [] },   // 取込開始時点の残高 { id, account, partner, amount }。滞留・マイナス残高の判定に使う
       notes: '',             // 特有の取引・例外処理のメモ（判定には使わない。引継ぎに出す）
       createdAt: new Date().toISOString(),
     };
   }
   function thresholds(company) {
-    const t = Object.assign({ high: 100000, mid: 10000, min: 1000, dateWindow: 3 }, company && company.thresholds);
+    const t = Object.assign({ high: 100000, mid: 10000, min: 1000, dateWindow: 3, staleMonths: 3 }, company && company.thresholds);
     for (const k of Object.keys(t)) t[k] = Math.max(0, Number(t[k]) || 0);
     return t;
   }
@@ -43,12 +44,24 @@
   const BS_RE = /^(売掛金|買掛金|未払金|未払費用|前払費用|前払金|前渡金|前受金|前受収益|仮払金|仮受金|立替金|預り金|未収入金|未収金|未収収益|短期貸付金|長期貸付金|役員貸付金|役員借入金|短期借入金|長期借入金|事業主貸|事業主借|元入金|資本金|資本準備金|商品|製品|仕掛品|原材料|貯蔵品|棚卸資産|仮払消費税|仮受消費税|未払消費税|未収消費税|未払法人税等|貸倒引当金|敷金|差入保証金|預け金|工具器具備品|車両運搬具|建物|建物附属設備|構築物|機械装置|ソフトウェア|土地|一括償却資産|繰越利益剰余金|受取手形|支払手形|電子記録債権|電子記録債務|有価証券|投資有価証券|出資金|保険積立金|長期前払費用|リース債務|賞与引当金|退職給付引当金)|減価償却累計額$/;
   function accountKind(company, name) {
     const o = company && company.accountKinds && company.accountKinds[name];
-    if (o) return o;
+    if (o) return (o === 'rev' || o === 'cogs' || o === 'exp') ? 'pl' : o;
     const n = U.nfkc(name);
     if (FUND_RE.test(n)) return 'fund';
     if (BS_RE.test(n)) return 'bs';
     return 'pl';
   }
+
+  // 損益科目の内訳：'rev' 収益 | 'cogs' 売上原価 | 'exp' 経費。名前からの推定で、会社別の指定が優先
+  const REV_RE = /売上|収入|受取利息|受取配当|雑収入|益$/, COGS_RE = /仕入|売上原価|期首.*棚卸|期末.*棚卸|製造原価|材料費/;
+  function plClass(company, name) {
+    const o = company && company.accountKinds && company.accountKinds[name];
+    if (o === 'rev' || o === 'cogs' || o === 'exp') return o;
+    const n = U.nfkc(name);
+    return COGS_RE.test(n) ? 'cogs' : REV_RE.test(n) ? 'rev' : 'exp';
+  }
+  // 残高が貸方に出る科目（負債・純資産・カード）。名前からの推定
+  const CREDIT_RE = /買掛金|未払|前受|預り金|仮受|借入金|引当金|支払手形|電子記録債務|リース債務|資本|元入金|剰余金|事業主借|累計額|カード|CARD/i;
+  const normalSide = name => CREDIT_RE.test(U.nfkc(name)) ? 'C' : 'D';
 
   // 行 → 仕訳（伝票番号が同じ行をまとめる）→ 借方・貸方それぞれの記入（posting）
   function buildEntries(company, lines) {
@@ -64,7 +77,7 @@
         for (const [side, p] of [['D', 'd'], ['C', 'c']]) {
           const acc = l[p + 'Acc']; if (!acc) continue;
           const partner = l[p + 'Partner'] || l[(p === 'd' ? 'c' : 'd') + 'Partner'] || e.partner;
-          e.postings.push({ entry: e, line: l, side, account: acc, amount: l[p + 'Amt'], tax: l[p + 'Tax'] || '', partner, pkey: U.normPartner(partner), desc: l.desc || e.desc, dkey: U.normDesc(l.desc || e.desc), note: l[p + 'Note'] || '', kind: accountKind(company, acc) });
+          e.postings.push({ entry: e, line: l, side, account: acc, amount: l[p + 'Amt'], tax: l[p + 'Tax'] || '', partner, pkey: U.normPartner(partner), desc: l.desc || e.desc, dkey: U.normDesc(l.desc || e.desc), note: l[p + 'Note'] || '', item: l[p + 'Item'] || '', dept: l[p + 'Dept'] || '', kind: accountKind(company, acc) });
         }
       }
       e.isTransfer = e.postings.length > 0 && e.postings.every(p => p.kind === 'fund');
@@ -87,6 +100,7 @@
     invoiceReview: { title: '国税庁「令和8年度 税制改正特集（インボイス関係）」', url: 'https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/invoice-review/index.htm', checked: '2026-11-11' },
     ta6498: { title: '国税庁タックスアンサー No.6498 適格請求書等保存方式（インボイス制度）（令和8年4月1日現在法令等）', url: 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6498.htm', checked: '2026-11-11' },
     ta6496: { title: '国税庁タックスアンサー No.6496 仕入税額控除をするための帳簿及び請求書等の保存（令和8年4月1日現在法令等）', url: 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6496.htm', checked: '2026-11-11' },
+    ta2606: { title: '国税庁タックスアンサー No.2606 金銭を貸し付けたとき', url: 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/gensen/2606.htm', checked: '2026-10-09' },
     ta6505: { title: '国税庁タックスアンサー No.6505 簡易課税制度（令和8年4月1日現在法令等）', url: 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6505.htm', checked: '2026-11-11' },
   };
   // 適格請求書発行事業者以外からの課税仕入れに係る経過措置の控除割合
@@ -113,6 +127,6 @@
     return { affects: null, text: '会社の消費税の処理方針が未登録のため、納付税額への影響は判定していません（会社ルールで登録してください）。', sources: [] };
   }
 
-  KR.model = { STATUS, UNRESOLVED, SEVERITY, BASIS, CHECKS, TAX_STATUS, SOURCES, INVOICE_RATIO, newCompany, thresholds, accountKind, buildEntries, entryView, invoiceRatioOn, ratioInTax, taxBase, taxImpact };
+  KR.model = { STATUS, UNRESOLVED, SEVERITY, BASIS, CHECKS, TAX_STATUS, SOURCES, INVOICE_RATIO, newCompany, thresholds, accountKind, plClass, normalSide, buildEntries, entryView, invoiceRatioOn, ratioInTax, taxBase, taxImpact };
   if (typeof module !== 'undefined' && module.exports) module.exports = KR;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

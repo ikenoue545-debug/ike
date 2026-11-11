@@ -187,6 +187,71 @@
     return out;
   }
 
+  // 月次推移（貸借対照表）CSV → 科目ごとの期首残高と月末残高。タグ別（取引先など）の内訳行は使わず、科目の合計行だけを読む
+  function readBS(text, fileName) {
+    const rows = parse(text), out = { kind: 'bs', fileName: fileName || '', opening: {}, balances: {}, months: [], warnings: [], fatal: null };
+    const ym = v => { const m = U.clean(v).match(/^(\d{4})[-\/年](\d{1,2})月?$/); return m ? m[1] + '-' + U.pad(+m[2]) : null; };
+    const hi = rows.slice(0, 10).findIndex(r => r.some(c => U.clean(c) === '期首') && r.some(c => ym(c)));
+    if (hi < 0) { out.fatal = '見出し行（「期首」と「2026-04」のような月の列）が見つかりません。freee の［月次推移］→［貸借対照表］のCSVを選んでください。'; return out; }
+    if (rows.slice(0, hi + 1).some(r => r.some(c => /単位[：:]\s*(千円|百万円)/.test(U.nfkc(c))))) { out.fatal = '表示単位が円ではありません。円単位で出力したCSVを選んでください。'; return out; }
+    const head = rows[hi].map(U.clean), openIdx = head.indexOf('期首'), tagIdx = head.findIndex(h => /^(取引先|品目|部門|メモタグ|セグメント\d?)$/.test(h));
+    let nameIdx = head.indexOf('勘定科目'); if (nameIdx < 0) nameIdx = head.findIndex((h, i) => i < openIdx && h === ''); if (nameIdx < 0) nameIdx = 0;
+    const cols = head.map((h, i) => ({ i, m: ym(h) })).filter(c => c.m);
+    out.months = cols.map(c => c.m);
+    for (let i = hi + 1; i < rows.length; i++) {
+      const r = rows[i], name = U.trim(r[nameIdx]);
+      if (!name || (tagIdx >= 0 && U.clean(r[tagIdx]) !== '')) continue;
+      const op = U.parseAmount(r[openIdx]), vals = cols.map(c => U.parseAmount(r[c.i]));
+      if ((op == null || isNaN(op)) && vals.every(v => v == null || isNaN(v))) continue;   // 区分の見出し行
+      if (out.balances[name]) { out.warnings.push({ row: i + 1, text: '「' + name + '」が2回あります。最初の行を使います' }); continue; }
+      out.opening[name] = (op == null || isNaN(op)) ? 0 : op;
+      out.balances[name] = {}; cols.forEach((c, k) => { if (vals[k] != null && !isNaN(vals[k])) out.balances[name][c.m] = vals[k]; });
+    }
+    out.stats = { accounts: Object.keys(out.balances).length, from: out.months[0], to: out.months[out.months.length - 1], tagged: tagIdx >= 0 };
+    if (!out.stats.accounts) out.fatal = '残高のある科目の行を読めませんでした。';
+    out.hash = U.hash(JSON.stringify([out.opening, out.balances]));
+    return out;
+  }
+
+  // 一覧形式の資料（請求一覧・給与一覧）を読む共通処理。読めない行は理由つきで返す
+  function readTable(text, fileName, kind, fields, required, labels, rowFn) {
+    const rows = parse(text), out = { kind, fileName: fileName || '', lines: [], rejected: [], warnings: [], columns: [], unmapped: [], stats: null, fatal: null };
+    const h = findHeader(rows, fields), m0 = h.index >= 0 ? mapHeader(rows[h.index], fields) : { map: {}, unmapped: [] }, map = m0.map;
+    const miss = required.filter(k => map[k] == null);
+    if (h.index < 0 || miss.length) { out.fatal = '必要な列がありません：' + miss.map(k => labels[k] + '（' + fields[k].join('・') + ' のいずれか）').join('、') + (h.index >= 0 ? '。見つかった列：' + rows[h.index].map(U.clean).filter(Boolean).join('、') : ''); return out; }
+    out.columns = Object.keys(map).map(k => ({ key: k, header: U.clean(rows[h.index][map[k]]) })); out.unmapped = m0.unmapped;
+    const get = (r, k) => map[k] == null ? '' : U.trim(r[map[k]]);
+    let blank = 0, min = null, max = null;
+    for (let i = h.index + 1; i < rows.length; i++) {
+      const r = rows[i]; if (!r.some(c => U.clean(c) !== '')) { blank++; continue; }
+      const reasons = [], num = (k, need) => { if (map[k] == null) return null; const v = U.parseAmount(get(r, k)); if (v != null && isNaN(v)) { reasons.push(labels[k] + 'を読めません（「' + get(r, k) + '」）'); return null; } if (v == null && need) reasons.push(labels[k] + 'が空です'); return v; };
+      const date = U.parseDate(get(r, 'date')); if (!date) reasons.push(labels.date + 'を読めません（「' + get(r, 'date') + '」）');
+      const line = rowFn(r, get, num, reasons, i + 1);
+      if (reasons.length) { out.rejected.push({ row: i + 1, reasons, raw: r.map(U.clean).join(' | ').slice(0, 300) }); continue; }
+      line.row = i + 1; line.date = date; out.lines.push(line);
+      if (!min || date < min) min = date; if (!max || date > max) max = date;
+    }
+    out.stats = { rows: out.lines.length, blank, rejected: out.rejected.length, from: min, to: max };
+    out.hash = U.hash(JSON.stringify(out.lines));
+    return out;
+  }
+  const INVOICE_FIELDS = { date: ['請求日', '発行日', '売上日', '取引日', '日付'], partner: ['取引先', '取引先名', '請求先', '顧客名', '得意先', '得意先名'], amount: ['請求金額', '請求額', '合計金額', '税込金額', '金額', '合計'], no: ['請求書番号', '請求番号', '番号', 'No.', 'No'], due: ['入金期日', '支払期日', '入金予定日', '支払期限', '期日'], item: ['件名', '品目', '内容', '摘要'] };
+  const INVOICE_LABEL = { date: '請求日', partner: '取引先', amount: '請求金額', no: '請求書番号', due: '入金期日', item: '件名' };
+  function readInvoices(text, fileName) {
+    return readTable(text, fileName, 'invoices', INVOICE_FIELDS, ['date', 'partner', 'amount'], INVOICE_LABEL, (r, get, num, reasons) => {
+      const amount = num('amount', true), partner = get(r, 'partner'), dueRaw = get(r, 'due'), due = dueRaw ? U.parseDate(dueRaw) : null;
+      if (!partner) reasons.push('取引先が空です'); if (dueRaw && !due) reasons.push('入金期日を読めません（「' + dueRaw + '」）'); if (amount === 0) reasons.push('請求金額が0です');
+      return { partner, amount, no: get(r, 'no'), due, item: get(r, 'item') };
+    });
+  }
+  const PAYROLL_FIELDS = { date: ['支給日', '支払日', '日付'], name: ['氏名', '従業員名', '社員名', '名前'], cls: ['区分', '役員区分', '役職区分'], gross: ['総支給額', '総支給', '支給合計', '支給額合計'], deduct: ['控除合計', '控除額合計', '控除計'], net: ['差引支給額', '差引支給', '手取額', '振込額'] };
+  const PAYROLL_LABEL = { date: '支給日', name: '氏名', cls: '区分', gross: '総支給額', deduct: '控除合計', net: '差引支給額' };
+  function readPayroll(text, fileName) {
+    const res = readTable(text, fileName, 'payroll', PAYROLL_FIELDS, ['date', 'gross'], PAYROLL_LABEL, (r, get, num) => ({ name: get(r, 'name'), officer: /役員/.test(U.nfkc(get(r, 'cls'))), gross: num('gross', true), deduct: num('deduct', false), net: num('net', false) }));
+    if (!res.fatal) { const has = k => res.columns.some(c => c.key === k); res.has = { cls: has('cls'), deduct: has('deduct'), net: has('net') }; }
+    return res;
+  }
+
   // 書き出し用。Excel で数式として扱われないよう、= + - @ で始まる文字列には ' を付ける
   function toCSV(rows) {
     return '﻿' + rows.map(r => r.map(v => {
@@ -196,6 +261,6 @@
     }).join(',')).join('\r\n') + '\r\n';
   }
 
-  KR.csv = { decode, parse, readJournal, readStatement, toCSV, JOURNAL_FIELDS, STATEMENT_FIELDS };
+  KR.csv = { decode, parse, readJournal, readStatement, readBS, readInvoices, readPayroll, toCSV, JOURNAL_FIELDS, STATEMENT_FIELDS };
   if (typeof module !== 'undefined' && module.exports) module.exports = KR;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

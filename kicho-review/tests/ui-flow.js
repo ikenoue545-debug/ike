@@ -38,16 +38,16 @@ const SHOT = process.env.SHOT_DIR;
   });
   await step('同じファイルの再取込：取込済みと知らせ、行は二重にならない', async () => {
     await page.setInputFiles('#jfile', S('サンプル_仕訳帳_2026-10.csv')); await page.waitForSelector('.preview');
-    const t = await page.textContent('.preview'); assert.match(t, /同じ内容のファイルを取込済み/); assert.match(t, /41行を、このファイルの内容で置き換えます/);
+    const t = await page.textContent('.preview'); assert.match(t, /同じ内容のファイルを取込済み/); assert.match(t, /43行を、このファイルの内容で置き換えます/);
     await page.click('[data-act="commitImport"]'); await page.waitForSelector('.preview', { state: 'detached' });
-    assert.equal(await page.evaluate(() => window.KRApp.state.data.lines.length), 228);
+    assert.equal(await page.evaluate(() => window.KRApp.state.data.lines.length), 230);
   });
   await step('レビューを実行：重要度順に確認事項が並ぶ', async () => {
     await tab('レビュー一覧'); assert.match(await page.textContent('main'), /まだ実行していません/);
     await page.click('[data-act="run"]'); await page.waitForSelector('.list .row');
     const rows = await page.locator('.list .row').allTextContents();
-    assert.equal(rows.length, 10, rows.join('\n'));   // 会社ルール未登録のため、役員報酬（会社ルール）は出ない
-    for (const re of [/重複候補：広告宣伝費 55,000円/, /重複候補：消耗品費 32,780円/, /東京電力EP 水道光熱費 → 通信費/, /定期取引の計上漏れ候補：法定福利費/, /アドビ.*対象外/, /期首残高が .* 以上ないとマイナス/]) assert.ok(rows.some(r => re.test(r)), String(re));
+    assert.equal(rows.length, 14, rows.join('\n'));   // 会社ルール・試算表が未登録のため、役員報酬（会社ルール）・残高の整合性・仮払金は出ない
+    for (const re of [/重複候補：広告宣伝費 55,000円/, /重複候補：消耗品費 32,780円/, /東京電力EP 水道光熱費 → 通信費/, /定期取引の計上漏れ候補：法定福利費/, /アドビ.*対象外/, /期首残高が .* 以上ないとマイナス/, /滞留の可能性：売掛金 シーウェーブ/, /役員貸付金の増減/, /月次の変動：修繕費/, /売上の内訳の変動：取引先「ビーライン/]) assert.ok(rows.some(r => re.test(r)), String(re));
     assert.ok(!rows.some(r => /駐車場|電車代|ATM/.test(r)));
     assert.match(rows[0], /^高/);
   });
@@ -72,7 +72,15 @@ const SHOT = process.env.SHOT_DIR;
   });
   await step('再実行しても対応状況は引き継がれる', async () => {
     await page.click('[data-act="run"]'); await page.waitForSelector('.list .row .st-waiting');
-    assert.equal(await page.locator('.list .row').count(), 10);
+    assert.equal(await page.locator('.list .row').count(), 14);
+  });
+  await step('月次推移（貸借対照表）CSV：取り込むと再実行を促し、残高の整合性と、仕訳に動きのない仮払金の滞留が出る', async () => {
+    await tab('データ取込'); await page.setInputFiles('#bsfile', S('サンプル_読めない行を含む仕訳帳.csv')); await page.waitForSelector('.warnbox:has-text("見出し行")');
+    await page.setInputFiles('#bsfile', S('サンプル_月次推移_貸借対照表.csv')); await page.waitForSelector('table.kv:has-text("8科目")');
+    await tab('レビュー一覧'); assert.match(await page.textContent('main'), /仕訳データが変わっています/);
+    await page.click('[data-act="run"]'); await page.waitForSelector('.list .row:has-text("残高の整合性：売掛金")');
+    assert.equal(await page.locator('.list .row').count(), 16); assert.equal(await page.locator('.list .row:has-text("仮払金（科目全体） 80,000円")').count(), 1);
+    await page.click('.list .row:has-text("残高の整合性：売掛金")'); const t = await page.textContent('.detail'); assert.match(t, /試算表：前月末/); assert.match(t, /出力した時点が違う/);
   });
   await step('会社ルール：定期取引を登録すると再実行を促し、会社ルールとして指摘する', async () => {
     await tab('会社ルール'); await page.selectOption('[data-c="tax.status"]', 'general');
@@ -90,18 +98,35 @@ const SHOT = process.env.SHOT_DIR;
   });
   await step('サンプルの会社を読み込む：別の会社としてデータが分かれる', async () => {
     await page.evaluate(() => { document.querySelector('#app').insertAdjacentHTML('beforeend', '<button id="t-sample" data-act="sample">s</button>'); }); await page.click('#t-sample');
-    await page.waitForSelector('.list .row'); assert.equal(await page.locator('.list .row').count(), 11);
+    await page.waitForSelector('.list .row'); assert.equal(await page.locator('.list .row').count(), 17);
     assert.equal(await page.locator('.list .row .st-waiting').count(), 0, '別の会社の対応状況が混ざっていない');
     assert.equal(await page.evaluate(() => window.KRApp.state.company.exceptions.length), 0);
     assert.match(await page.textContent('.list'), /現金残高がマイナス/);
   });
   await step('明細との照合：4区分に分け、一致以外をレビュー一覧に追加する', async () => {
-    await tab('明細との照合'); await page.click('[data-act="sampleStatement"]'); await page.waitForSelector('.preview'); await page.click('[data-act="commitStatement"]'); await page.waitForSelector('table.recon');
-    const s = await page.textContent('.summary'); assert.match(s, /14一致/); assert.match(s, /1差額あり/); assert.match(s, /2片側のみ/); assert.match(s, /1同一取引か要確認/);
+    await tab('資料との照合'); await page.click('[data-act="sampleStatement"]'); await page.waitForSelector('.preview'); await page.click('[data-act="commitStatement"]'); await page.waitForSelector('table.recon');
+    const s = await page.textContent('.summary'); assert.match(s, /16一致/); assert.match(s, /1差額あり/); assert.match(s, /2片側のみ/); assert.match(s, /1同一取引か要確認/);
     await shot('03-recon');
     await tab('レビュー一覧'); await page.selectOption('[data-f="check"]', 'RECON'); assert.equal(await page.locator('.list .row').count(), 4);
     await page.click('.list .row:has-text("差額あり")'); const t = await page.textContent('.detail'); assert.match(t, /明細側/); assert.match(t, /帳簿側/); assert.match(t, /振込手数料/);
     await page.selectOption('[data-f="check"]', '');
+  });
+  await step('売上資料との照合：計上の差異と、入金が見当たらない請求を請求書単位で示す', async () => {
+    await tab('資料との照合'); await page.click('[data-act="reconKind"][data-k="sales"]'); await page.click('[data-act="sampleDoc"]'); await page.waitForSelector('.preview');
+    assert.match(await page.textContent('.preview'), /10行.*うち対象月 5行/); await page.click('[data-act="commitDoc"]'); await page.waitForSelector('table.recon');
+    const s = await page.textContent('.summary'); assert.match(s, /3一致/); assert.match(s, /1差額あり/); assert.match(s, /1片側のみ/); assert.match(s, /1入金が見当たらない請求/);
+    const m = await page.textContent('main'); assert.match(m, /税込・税抜の違いの可能性/); assert.match(m, /INV-0905.*入金期日 2026-10-20 を過ぎても/);
+    await shot('05-sales');
+  });
+  await step('給与資料との照合：総支給・控除・差引支給を帳簿の合計と比べる', async () => {
+    await page.click('[data-act="reconKind"][data-k="pay"]'); await page.click('[data-act="sampleDoc"]'); await page.waitForSelector('.preview'); await page.click('[data-act="commitDoc"]'); await page.waitForSelector('table.recon');
+    const s = await page.textContent('.summary'); assert.match(s, /2一致/); assert.match(s, /2差額あり/);
+    assert.match(await page.textContent('table.recon'), /総支給額（役員）500,000550,000-50,000/);
+    await tab('レビュー一覧'); assert.equal(await page.locator('.list .row').count(), 26);
+    await page.selectOption('[data-f="check"]', 'SALES'); assert.equal(await page.locator('.list .row').count(), 3);
+    await page.click('.list .row:has-text("入金が見当たらない請求")'); assert.match(await page.textContent('.detail'), /請求一覧側/);
+    await page.selectOption('[data-f="check"]', ''); await shot('06-review-all');
+    await page.reload(); await page.waitForSelector('.list .row'); assert.equal(await page.locator('.list .row').count(), 26, '再読込しても照合の結果が残る');
   });
   await step('会社を切り替えても記録が保たれ、引継ぎを出力できる', async () => {
     await page.selectOption('#company', { label: 'テスト商店（架空）' }); await page.waitForSelector('.list .row');
@@ -118,7 +143,7 @@ const SHOT = process.env.SHOT_DIR;
     await tab('データと安全性'); assert.match(await page.textContent('main'), /外部と通信しません/);
     await page.click('[data-act="delCompany"]'); await page.waitForFunction(() => window.KRApp.state.company && window.KRApp.state.company.id === 'sample');
     assert.equal(await page.locator('#company option').count(), 1);
-    await tab('レビュー一覧'); assert.equal(await page.locator('.list .row').count(), 15);
+    await tab('レビュー一覧'); assert.equal(await page.locator('.list .row').count(), 26);
   });
   await step('外部への通信・画面のエラーがない', async () => { assert.deepEqual(external, []); assert.deepEqual(errors, []); });
   await browser.close();

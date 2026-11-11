@@ -38,6 +38,8 @@
     if (P) simple(10, '消耗品費', 32780, IN, '(株)オフィスサプライ', '未払金', '請求書 コピー用紙・トナー');
     simple(14, '広告宣伝費', 55000, IN, '(株)アドワークス', '普通預金', 'Web広告運用 ' + cur);
     if (P) simple(14, '広告宣伝費', 55000, IN, '(株)アドワークス', '普通預金', 'Web広告運用 ' + cur);
+    if (P) simple(17, '修繕費', 180000, IN, '(株)クリーン設備', '普通預金', 'エアコン修理');
+    if (P) r(23, '役員貸付金', 200000, '', '', '普通預金', 200000, '', '', '社長 仮払');
     simple(15, P ? '通信費' : '水道光熱費', vary(16400, m, 40, 100), IN, '東京電力EP', '普通預金', '電気料金 ' + prev);
     r(20, '普通預金', 330000, '', '(株)エース企画', '売掛金', 330000, '', '(株)エース企画', '入金 ' + prev);
     r(20, '普通預金', vary(205000, m - 1, 50, 1000), '', 'ビーライン(株)', '売掛金', vary(205000, m - 1, 50, 1000), '', 'ビーライン(株)', '入金 ' + prev);
@@ -45,7 +47,8 @@
     r(22, '普通預金', 55000, '', '(株)デルタ工業', '売掛金', 55000, '', '(株)デルタ工業', '入金 ライセンス料 ' + prev);
     // 売上（月末締め・翌月入金）
     r(25, '売掛金', 330000, '', '(株)エース企画', '売上高', 330000, OUT, '(株)エース企画', 'サイト運用 ' + cur);
-    r(25, '売掛金', vary(205000, m, 50, 1000), '', 'ビーライン(株)', '売上高', vary(205000, m, 50, 1000), OUT, 'ビーライン(株)', '制作費 ' + cur);
+    const bSales = P ? 82000 : vary(205000, m, 50, 1000);
+    r(25, '売掛金', bSales, '', 'ビーライン(株)', '売上高', bSales, OUT, 'ビーライン(株)', '制作費 ' + cur);
     r(25, '売掛金', 88000, '', '(株)デルタ工業', '売上高', 88000, OUT, '(株)デルタ工業', '保守料 ' + cur);
     r(25, '売掛金', 55000, '', '(株)デルタ工業', '売上高', 55000, OUT, '(株)デルタ工業', 'ライセンス料 ' + cur);
     if (m === 5 || m === 8) r(25, '売掛金', 550000, '', 'シーウェーブ(同)', '売上高', 550000, OUT, 'シーウェーブ(同)', '四半期レポート');
@@ -87,6 +90,37 @@
     const rows = out.map(x => { bal += x.amount; return [x.date.replace(/-/g, '/'), x.desc, x.amount < 0 ? -x.amount : '', x.amount > 0 ? x.amount : '', bal]; });
     return KR.csv.toCSV([['日付', '摘要', 'お支払金額', 'お預り金額', '残高']].concat(rows)).replace(/^﻿/, '');
   }
+  // 取込開始時点（2026-05-01）の残高。月次推移BSのサンプルと、会社ルールの取引先別残高の両方に使う
+  const OPEN = { '現金': 30000, '普通預金': 3000000, '売掛金': 330000 + vary(205000, 4, 50, 1000) + 143000, '仮払金': 80000, '役員貸付金': 0, '法人カード': 60000, '未払金': 0, '預り金': 115000 };
+  const MONTHS = ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'];
+  // 月次推移（貸借対照表）。仕訳から作り、10月の売掛金だけ 110,000円多くする（仕訳帳CSVより後に出力し、その間に売上が1件登録された想定）
+  function bsCSV() {
+    const cols = ['2026-04'].concat(MONTHS, ['2026-11', '2026-12', '2027-01', '2027-02', '2027-03']), bal = Object.assign({}, OPEN), rows = {};
+    for (const a of Object.keys(OPEN)) rows[a] = [OPEN[a], OPEN[a]];
+    for (const ym of MONTHS) {
+      for (const r of monthRows(ym, ym === '2026-10')) for (const [acc, amt, side] of [[r[2], r[3], 'D'], [r[6], r[7], 'C']]) if (acc in bal) bal[acc] += (KR.model.normalSide(acc) === side ? 1 : -1) * amt;
+      for (const a of Object.keys(OPEN)) rows[a].push(bal[a] + (a === '売掛金' && ym === '2026-10' ? 110000 : 0));
+    }
+    for (const a of Object.keys(OPEN)) while (rows[a].length < cols.length + 1) rows[a].push(rows[a][rows[a].length - 1]);
+    const line = (name, vals) => ['', name].concat(vals || cols.map(() => '').concat(['']));
+    const out = [['月次推移：貸借対照表_株式会社サンプル商会（架空）（期間：2026年04月～2027年03月、表示単位：円）'], ['勘定科目コード', '', '期首'].concat(cols), line('資産の部'), line('流動資産')];
+    for (const a of ['現金', '普通預金', '売掛金', '仮払金', '役員貸付金']) out.push(line(a, rows[a]));
+    out.push(line('負債の部'), line('流動負債'));
+    for (const a of ['法人カード', '未払金', '預り金']) out.push(line(a, rows[a]));
+    return KR.csv.toCSV(out).replace(/^\ufeff/, '');
+  }
+  // 請求一覧（9月・10月）。取引先名は帳簿と表記を変えてある（株式会社／(株)）
+  function invoicesCSV() {
+    const rows = [['請求日', '請求書番号', '取引先', '件名', '請求金額', '入金期日'],
+      ['2026/09/25', 'INV-0901', '株式会社エース企画', 'サイト運用 09月分', 330000, '2026/10/20'], ['2026/09/25', 'INV-0902', 'ビーライン株式会社', '制作費 09月分', vary(205000, 9, 50, 1000), '2026/10/20'],
+      ['2026/09/25', 'INV-0903', '株式会社デルタ工業', '保守料 09月分', 88000, '2026/10/22'], ['2026/09/25', 'INV-0904', '株式会社デルタ工業', 'ライセンス料 09月分', 55000, '2026/10/22'], ['2026/09/25', 'INV-0905', '株式会社デルタ工業', '追加作業', 33000, '2026/10/20'],
+      ['2026/10/25', 'INV-1001', '株式会社エース企画', 'サイト運用 10月分', 363000, '2026/11/20'], ['2026/10/25', 'INV-1002', 'ビーライン株式会社', '制作費 10月分', 82000, '2026/11/20'],
+      ['2026/10/25', 'INV-1003', '株式会社デルタ工業', '保守料 10月分', 88000, '2026/11/22'], ['2026/10/25', 'INV-1004', '株式会社デルタ工業', 'ライセンス料 10月分', 55000, '2026/11/22'], ['2026/10/31', 'INV-1005', 'シーウェーブ合同会社', 'スポット調査', 110000, '2026/11/30']];
+    return KR.csv.toCSV(rows).replace(/^\ufeff/, '');
+  }
+  function payrollCSV() {
+    return KR.csv.toCSV([['支給日', '氏名', '区分', '総支給額', '控除合計', '差引支給額'], ['2026/10/25', '山田 太郎（架空）', '役員', 500000, 70000, 430000], ['2026/10/25', '鈴木 花子（架空）', '従業員', 300000, 45000, 255000]]).replace(/^\ufeff/, '');
+  }
   function company() {
     const c = KR.model.newCompany('株式会社サンプル商会（架空）');
     Object.assign(c, {
@@ -98,6 +132,7 @@
       ],
       partnerRules: [{ id: 'p1', partner: '佐藤デザイン', account: '外注費', tax: '', note: '免税事業者（登録番号なし）' }],
       cashOpening: { date: '2026-05-01', amount: 30000 },
+      opening: { date: '2026-05-01', balances: [{ id: 'o1', account: '売掛金', partner: '(株)エース企画', amount: 330000 }, { id: 'o2', account: '売掛金', partner: 'ビーライン(株)', amount: vary(205000, 4, 50, 1000) }, { id: 'o3', account: '売掛金', partner: '(株)デルタ工業', amount: 143000 }] },
       notes: '駐車場は2区画を同額で毎月支払い。',
     });
     return c;
@@ -110,8 +145,11 @@
         { name: 'サンプル_仕訳帳_2026-10.csv', text: journalCSV(['2026-10'], true) },
       ],
       statement: { name: 'サンプル_普通預金明細_2026-10.csv', text: statementCSV(), account: '普通預金' },
+      bs: { name: 'サンプル_月次推移_貸借対照表.csv', text: bsCSV() },
+      invoices: { name: 'サンプル_請求一覧_2026-09〜10.csv', text: invoicesCSV() },
+      payroll: { name: 'サンプル_給与一覧_2026-10.csv', text: payrollCSV() },
     };
   }
-  KR.sample = { build, journalCSV, statementCSV, company };
+  KR.sample = { build, journalCSV, statementCSV, bsCSV, invoicesCSV, payrollCSV, company };
   if (typeof module !== 'undefined' && module.exports) module.exports = KR;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

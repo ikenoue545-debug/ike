@@ -13,7 +13,7 @@
   const pct = x => Math.round(x * 100) + '%';
   const distText = map => [...map].sort((a, b) => b[1] - a[1]).map(([k, v]) => (k || '（空欄）') + ' ' + v + '件').join('、');
 
-  function runReview(company, lines, month, files) {
+  function runReview(company, lines, month, files, extra) {
     const t = M.thresholds(company);
     const entries = M.buildEntries(company, lines);
     const all = entries.flatMap(e => e.postings);
@@ -36,7 +36,6 @@
     if (!all.some(p => p.tax)) notes.push('税区分の列がない、またはすべて空欄のため、税区分のチェックは行っていません。');
     if (!all.some(p => p.pkey)) notes.push('取引先の列がない、またはすべて空欄のため、取引先ごとの比較は摘要を手がかりにした範囲に限られます。');
     notes.push('登録経路（自動登録ルール・明細同期・手入力など）は仕訳帳CSVに含まれないため取得していません。自動登録ルールに関する記述はすべて推測です。');
-    notes.push('売掛金・買掛金などの滞留、期首・期末残高の整合性、前月・前年同月比較は、この版では行っていません（未対応事項を参照）。');
 
     // ---------- 1. 重複候補 ----------
     {
@@ -339,6 +338,9 @@
         }
       }
     }
+
+    // ---------- 9. 残高・月次推移（balance.js） ----------
+    if (KR.balance) KR.balance.run({ company, entries, all, month, t, view, add, suppressed, notes, findings, bs: extra && extra.bs });
 
     const order = { high: 0, mid: 1, low: 2 };
     findings.sort((a, b) => order[a.severity] - order[b.severity] || b.amount - a.amount || (a.key < b.key ? -1 : 1));

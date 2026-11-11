@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'">
-<script>window.KR_VERSION="0.1.0";</script>
+<script>window.KR_VERSION="0.2.0";</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>記帳レビュー</title>
 <style>
@@ -92,6 +92,8 @@ header button{color:var(--text)}
 .row>.badge:last-child{grid-column:3;grid-row:1;justify-self:end}
 .row .meta{grid-row:2}
 table.entries td:first-child{white-space:nowrap}
+.subtabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}.subtabs button.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:600}
+h2.gap{margin-top:32px;padding-top:16px;border-top:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -364,6 +366,71 @@ table.entries td:first-child{white-space:nowrap}
     return out;
   }
 
+  // 月次推移（貸借対照表）CSV → 科目ごとの期首残高と月末残高。タグ別（取引先など）の内訳行は使わず、科目の合計行だけを読む
+  function readBS(text, fileName) {
+    const rows = parse(text), out = { kind: 'bs', fileName: fileName || '', opening: {}, balances: {}, months: [], warnings: [], fatal: null };
+    const ym = v => { const m = U.clean(v).match(/^(\d{4})[-\/年](\d{1,2})月?$/); return m ? m[1] + '-' + U.pad(+m[2]) : null; };
+    const hi = rows.slice(0, 10).findIndex(r => r.some(c => U.clean(c) === '期首') && r.some(c => ym(c)));
+    if (hi < 0) { out.fatal = '見出し行（「期首」と「2026-04」のような月の列）が見つかりません。freee の［月次推移］→［貸借対照表］のCSVを選んでください。'; return out; }
+    if (rows.slice(0, hi + 1).some(r => r.some(c => /単位[：:]\s*(千円|百万円)/.test(U.nfkc(c))))) { out.fatal = '表示単位が円ではありません。円単位で出力したCSVを選んでください。'; return out; }
+    const head = rows[hi].map(U.clean), openIdx = head.indexOf('期首'), tagIdx = head.findIndex(h => /^(取引先|品目|部門|メモタグ|セグメント\d?)$/.test(h));
+    let nameIdx = head.indexOf('勘定科目'); if (nameIdx < 0) nameIdx = head.findIndex((h, i) => i < openIdx && h === ''); if (nameIdx < 0) nameIdx = 0;
+    const cols = head.map((h, i) => ({ i, m: ym(h) })).filter(c => c.m);
+    out.months = cols.map(c => c.m);
+    for (let i = hi + 1; i < rows.length; i++) {
+      const r = rows[i], name = U.trim(r[nameIdx]);
+      if (!name || (tagIdx >= 0 && U.clean(r[tagIdx]) !== '')) continue;
+      const op = U.parseAmount(r[openIdx]), vals = cols.map(c => U.parseAmount(r[c.i]));
+      if ((op == null || isNaN(op)) && vals.every(v => v == null || isNaN(v))) continue;   // 区分の見出し行
+      if (out.balances[name]) { out.warnings.push({ row: i + 1, text: '「' + name + '」が2回あります。最初の行を使います' }); continue; }
+      out.opening[name] = (op == null || isNaN(op)) ? 0 : op;
+      out.balances[name] = {}; cols.forEach((c, k) => { if (vals[k] != null && !isNaN(vals[k])) out.balances[name][c.m] = vals[k]; });
+    }
+    out.stats = { accounts: Object.keys(out.balances).length, from: out.months[0], to: out.months[out.months.length - 1], tagged: tagIdx >= 0 };
+    if (!out.stats.accounts) out.fatal = '残高のある科目の行を読めませんでした。';
+    out.hash = U.hash(JSON.stringify([out.opening, out.balances]));
+    return out;
+  }
+
+  // 一覧形式の資料（請求一覧・給与一覧）を読む共通処理。読めない行は理由つきで返す
+  function readTable(text, fileName, kind, fields, required, labels, rowFn) {
+    const rows = parse(text), out = { kind, fileName: fileName || '', lines: [], rejected: [], warnings: [], columns: [], unmapped: [], stats: null, fatal: null };
+    const h = findHeader(rows, fields), m0 = h.index >= 0 ? mapHeader(rows[h.index], fields) : { map: {}, unmapped: [] }, map = m0.map;
+    const miss = required.filter(k => map[k] == null);
+    if (h.index < 0 || miss.length) { out.fatal = '必要な列がありません：' + miss.map(k => labels[k] + '（' + fields[k].join('・') + ' のいずれか）').join('、') + (h.index >= 0 ? '。見つかった列：' + rows[h.index].map(U.clean).filter(Boolean).join('、') : ''); return out; }
+    out.columns = Object.keys(map).map(k => ({ key: k, header: U.clean(rows[h.index][map[k]]) })); out.unmapped = m0.unmapped;
+    const get = (r, k) => map[k] == null ? '' : U.trim(r[map[k]]);
+    let blank = 0, min = null, max = null;
+    for (let i = h.index + 1; i < rows.length; i++) {
+      const r = rows[i]; if (!r.some(c => U.clean(c) !== '')) { blank++; continue; }
+      const reasons = [], num = (k, need) => { if (map[k] == null) return null; const v = U.parseAmount(get(r, k)); if (v != null && isNaN(v)) { reasons.push(labels[k] + 'を読めません（「' + get(r, k) + '」）'); return null; } if (v == null && need) reasons.push(labels[k] + 'が空です'); return v; };
+      const date = U.parseDate(get(r, 'date')); if (!date) reasons.push(labels.date + 'を読めません（「' + get(r, 'date') + '」）');
+      const line = rowFn(r, get, num, reasons, i + 1);
+      if (reasons.length) { out.rejected.push({ row: i + 1, reasons, raw: r.map(U.clean).join(' | ').slice(0, 300) }); continue; }
+      line.row = i + 1; line.date = date; out.lines.push(line);
+      if (!min || date < min) min = date; if (!max || date > max) max = date;
+    }
+    out.stats = { rows: out.lines.length, blank, rejected: out.rejected.length, from: min, to: max };
+    out.hash = U.hash(JSON.stringify(out.lines));
+    return out;
+  }
+  const INVOICE_FIELDS = { date: ['請求日', '発行日', '売上日', '取引日', '日付'], partner: ['取引先', '取引先名', '請求先', '顧客名', '得意先', '得意先名'], amount: ['請求金額', '請求額', '合計金額', '税込金額', '金額', '合計'], no: ['請求書番号', '請求番号', '番号', 'No.', 'No'], due: ['入金期日', '支払期日', '入金予定日', '支払期限', '期日'], item: ['件名', '品目', '内容', '摘要'] };
+  const INVOICE_LABEL = { date: '請求日', partner: '取引先', amount: '請求金額', no: '請求書番号', due: '入金期日', item: '件名' };
+  function readInvoices(text, fileName) {
+    return readTable(text, fileName, 'invoices', INVOICE_FIELDS, ['date', 'partner', 'amount'], INVOICE_LABEL, (r, get, num, reasons) => {
+      const amount = num('amount', true), partner = get(r, 'partner'), dueRaw = get(r, 'due'), due = dueRaw ? U.parseDate(dueRaw) : null;
+      if (!partner) reasons.push('取引先が空です'); if (dueRaw && !due) reasons.push('入金期日を読めません（「' + dueRaw + '」）'); if (amount === 0) reasons.push('請求金額が0です');
+      return { partner, amount, no: get(r, 'no'), due, item: get(r, 'item') };
+    });
+  }
+  const PAYROLL_FIELDS = { date: ['支給日', '支払日', '日付'], name: ['氏名', '従業員名', '社員名', '名前'], cls: ['区分', '役員区分', '役職区分'], gross: ['総支給額', '総支給', '支給合計', '支給額合計'], deduct: ['控除合計', '控除額合計', '控除計'], net: ['差引支給額', '差引支給', '手取額', '振込額'] };
+  const PAYROLL_LABEL = { date: '支給日', name: '氏名', cls: '区分', gross: '総支給額', deduct: '控除合計', net: '差引支給額' };
+  function readPayroll(text, fileName) {
+    const res = readTable(text, fileName, 'payroll', PAYROLL_FIELDS, ['date', 'gross'], PAYROLL_LABEL, (r, get, num) => ({ name: get(r, 'name'), officer: /役員/.test(U.nfkc(get(r, 'cls'))), gross: num('gross', true), deduct: num('deduct', false), net: num('net', false) }));
+    if (!res.fatal) { const has = k => res.columns.some(c => c.key === k); res.has = { cls: has('cls'), deduct: has('deduct'), net: has('net') }; }
+    return res;
+  }
+
   // 書き出し用。Excel で数式として扱われないよう、= + - @ で始まる文字列には ' を付ける
   function toCSV(rows) {
     return '﻿' + rows.map(r => r.map(v => {
@@ -373,7 +440,7 @@ table.entries td:first-child{white-space:nowrap}
     }).join(',')).join('\r\n') + '\r\n';
   }
 
-  KR.csv = { decode, parse, readJournal, readStatement, toCSV, JOURNAL_FIELDS, STATEMENT_FIELDS };
+  KR.csv = { decode, parse, readJournal, readStatement, readBS, readInvoices, readPayroll, toCSV, JOURNAL_FIELDS, STATEMENT_FIELDS };
   if (typeof module !== 'undefined' && module.exports) module.exports = KR;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
@@ -394,7 +461,7 @@ table.entries td:first-child{white-space:nowrap}
     trend: '過去傾向との違い',           // その会社の過去の処理と違う
     evidence: '資料不足による確認依頼',  // データだけでは判定できず、資料の確認が要る
   };
-  const CHECKS = { DUP: '重複候補', ACCOUNT: '勘定科目の不一致', TAX: '税区分の不一致', RECUR: '定期取引の計上漏れ', AMOUNT: '金額の違い', DESC: '摘要・取引先の不足', TAXRULE: '税区分と制度の適用時期', CASH: '現金残高', RECON: '明細との照合' };
+  const CHECKS = { DUP: '重複候補', ACCOUNT: '勘定科目の不一致', TAX: '税区分の不一致', RECUR: '定期取引の計上漏れ', AMOUNT: '金額の違い', DESC: '摘要・取引先の不足', TAXRULE: '税区分と制度の適用時期', CASH: '現金残高', STALE: '滞留の可能性', NEGBAL: 'マイナス残高', OFFICER: '役員貸付金・借入金', INTEG: '残高の整合性', TREND: '月次の変動', MIX: '売上の内訳の変動', RECON: '明細との照合', SALES: '売上資料との照合', PAY: '給与資料との照合' };
   const TAX_STATUS = { unknown: '未登録', general: '課税事業者（本則課税）', simplified: '課税事業者（簡易課税）', special20: '課税事業者（2割特例）', exempt: '免税事業者' };
 
   function newCompany(name) {
@@ -408,12 +475,13 @@ table.entries td:first-child{white-space:nowrap}
       recurring: [],         // { id, name, account, partner, keyword, amount, tolerancePct, note }
       exceptions: [],        // 確認済みルール { id, check, partner, account, keyword, amountMin, amountMax, from, to, reason, by, at }
       cashOpening: { date: '', amount: null },
+      opening: { date: '', balances: [] },   // 取込開始時点の残高 { id, account, partner, amount }。滞留・マイナス残高の判定に使う
       notes: '',             // 特有の取引・例外処理のメモ（判定には使わない。引継ぎに出す）
       createdAt: new Date().toISOString(),
     };
   }
   function thresholds(company) {
-    const t = Object.assign({ high: 100000, mid: 10000, min: 1000, dateWindow: 3 }, company && company.thresholds);
+    const t = Object.assign({ high: 100000, mid: 10000, min: 1000, dateWindow: 3, staleMonths: 3 }, company && company.thresholds);
     for (const k of Object.keys(t)) t[k] = Math.max(0, Number(t[k]) || 0);
     return t;
   }
@@ -423,12 +491,24 @@ table.entries td:first-child{white-space:nowrap}
   const BS_RE = /^(売掛金|買掛金|未払金|未払費用|前払費用|前払金|前渡金|前受金|前受収益|仮払金|仮受金|立替金|預り金|未収入金|未収金|未収収益|短期貸付金|長期貸付金|役員貸付金|役員借入金|短期借入金|長期借入金|事業主貸|事業主借|元入金|資本金|資本準備金|商品|製品|仕掛品|原材料|貯蔵品|棚卸資産|仮払消費税|仮受消費税|未払消費税|未収消費税|未払法人税等|貸倒引当金|敷金|差入保証金|預け金|工具器具備品|車両運搬具|建物|建物附属設備|構築物|機械装置|ソフトウェア|土地|一括償却資産|繰越利益剰余金|受取手形|支払手形|電子記録債権|電子記録債務|有価証券|投資有価証券|出資金|保険積立金|長期前払費用|リース債務|賞与引当金|退職給付引当金)|減価償却累計額$/;
   function accountKind(company, name) {
     const o = company && company.accountKinds && company.accountKinds[name];
-    if (o) return o;
+    if (o) return (o === 'rev' || o === 'cogs' || o === 'exp') ? 'pl' : o;
     const n = U.nfkc(name);
     if (FUND_RE.test(n)) return 'fund';
     if (BS_RE.test(n)) return 'bs';
     return 'pl';
   }
+
+  // 損益科目の内訳：'rev' 収益 | 'cogs' 売上原価 | 'exp' 経費。名前からの推定で、会社別の指定が優先
+  const REV_RE = /売上|収入|受取利息|受取配当|雑収入|益$/, COGS_RE = /仕入|売上原価|期首.*棚卸|期末.*棚卸|製造原価|材料費/;
+  function plClass(company, name) {
+    const o = company && company.accountKinds && company.accountKinds[name];
+    if (o === 'rev' || o === 'cogs' || o === 'exp') return o;
+    const n = U.nfkc(name);
+    return COGS_RE.test(n) ? 'cogs' : REV_RE.test(n) ? 'rev' : 'exp';
+  }
+  // 残高が貸方に出る科目（負債・純資産・カード）。名前からの推定
+  const CREDIT_RE = /買掛金|未払|前受|預り金|仮受|借入金|引当金|支払手形|電子記録債務|リース債務|資本|元入金|剰余金|事業主借|累計額|カード|CARD/i;
+  const normalSide = name => CREDIT_RE.test(U.nfkc(name)) ? 'C' : 'D';
 
   // 行 → 仕訳（伝票番号が同じ行をまとめる）→ 借方・貸方それぞれの記入（posting）
   function buildEntries(company, lines) {
@@ -444,7 +524,7 @@ table.entries td:first-child{white-space:nowrap}
         for (const [side, p] of [['D', 'd'], ['C', 'c']]) {
           const acc = l[p + 'Acc']; if (!acc) continue;
           const partner = l[p + 'Partner'] || l[(p === 'd' ? 'c' : 'd') + 'Partner'] || e.partner;
-          e.postings.push({ entry: e, line: l, side, account: acc, amount: l[p + 'Amt'], tax: l[p + 'Tax'] || '', partner, pkey: U.normPartner(partner), desc: l.desc || e.desc, dkey: U.normDesc(l.desc || e.desc), note: l[p + 'Note'] || '', kind: accountKind(company, acc) });
+          e.postings.push({ entry: e, line: l, side, account: acc, amount: l[p + 'Amt'], tax: l[p + 'Tax'] || '', partner, pkey: U.normPartner(partner), desc: l.desc || e.desc, dkey: U.normDesc(l.desc || e.desc), note: l[p + 'Note'] || '', item: l[p + 'Item'] || '', dept: l[p + 'Dept'] || '', kind: accountKind(company, acc) });
         }
       }
       e.isTransfer = e.postings.length > 0 && e.postings.every(p => p.kind === 'fund');
@@ -467,6 +547,7 @@ table.entries td:first-child{white-space:nowrap}
     invoiceReview: { title: '国税庁「令和8年度 税制改正特集（インボイス関係）」', url: 'https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/invoice-review/index.htm', checked: '2026-11-11' },
     ta6498: { title: '国税庁タックスアンサー No.6498 適格請求書等保存方式（インボイス制度）（令和8年4月1日現在法令等）', url: 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6498.htm', checked: '2026-11-11' },
     ta6496: { title: '国税庁タックスアンサー No.6496 仕入税額控除をするための帳簿及び請求書等の保存（令和8年4月1日現在法令等）', url: 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6496.htm', checked: '2026-11-11' },
+    ta2606: { title: '国税庁タックスアンサー No.2606 金銭を貸し付けたとき', url: 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/gensen/2606.htm', checked: '2026-10-09' },
     ta6505: { title: '国税庁タックスアンサー No.6505 簡易課税制度（令和8年4月1日現在法令等）', url: 'https://www.nta.go.jp/taxes/shiraberu/taxanswer/shohi/6505.htm', checked: '2026-11-11' },
   };
   // 適格請求書発行事業者以外からの課税仕入れに係る経過措置の控除割合
@@ -493,7 +574,7 @@ table.entries td:first-child{white-space:nowrap}
     return { affects: null, text: '会社の消費税の処理方針が未登録のため、納付税額への影響は判定していません（会社ルールで登録してください）。', sources: [] };
   }
 
-  KR.model = { STATUS, UNRESOLVED, SEVERITY, BASIS, CHECKS, TAX_STATUS, SOURCES, INVOICE_RATIO, newCompany, thresholds, accountKind, buildEntries, entryView, invoiceRatioOn, ratioInTax, taxBase, taxImpact };
+  KR.model = { STATUS, UNRESOLVED, SEVERITY, BASIS, CHECKS, TAX_STATUS, SOURCES, INVOICE_RATIO, newCompany, thresholds, accountKind, plClass, normalSide, buildEntries, entryView, invoiceRatioOn, ratioInTax, taxBase, taxImpact };
   if (typeof module !== 'undefined' && module.exports) module.exports = KR;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
@@ -513,7 +594,7 @@ table.entries td:first-child{white-space:nowrap}
   const pct = x => Math.round(x * 100) + '%';
   const distText = map => [...map].sort((a, b) => b[1] - a[1]).map(([k, v]) => (k || '（空欄）') + ' ' + v + '件').join('、');
 
-  function runReview(company, lines, month, files) {
+  function runReview(company, lines, month, files, extra) {
     const t = M.thresholds(company);
     const entries = M.buildEntries(company, lines);
     const all = entries.flatMap(e => e.postings);
@@ -536,7 +617,6 @@ table.entries td:first-child{white-space:nowrap}
     if (!all.some(p => p.tax)) notes.push('税区分の列がない、またはすべて空欄のため、税区分のチェックは行っていません。');
     if (!all.some(p => p.pkey)) notes.push('取引先の列がない、またはすべて空欄のため、取引先ごとの比較は摘要を手がかりにした範囲に限られます。');
     notes.push('登録経路（自動登録ルール・明細同期・手入力など）は仕訳帳CSVに含まれないため取得していません。自動登録ルールに関する記述はすべて推測です。');
-    notes.push('売掛金・買掛金などの滞留、期首・期末残高の整合性、前月・前年同月比較は、この版では行っていません（未対応事項を参照）。');
 
     // ---------- 1. 重複候補 ----------
     {
@@ -840,12 +920,241 @@ table.entries td:first-child{white-space:nowrap}
       }
     }
 
+    // ---------- 9. 残高・月次推移（balance.js） ----------
+    if (KR.balance) KR.balance.run({ company, entries, all, month, t, view, add, suppressed, notes, findings, bs: extra && extra.bs });
+
     const order = { high: 0, mid: 1, low: 2 };
     findings.sort((a, b) => order[a.severity] - order[b.severity] || b.amount - a.amount || (a.key < b.key ? -1 : 1));
     return { month, findings, suppressed, notes, stats: { entries: entries.filter(e => e.month === month).length, lines: lines.filter(l => l.date.slice(0, 7) === month).length, priorMonths: [...dataMonths].filter(m => m < month).sort() } };
   }
 
   KR.checks = { runReview };
+  if (typeof module !== 'undefined' && module.exports) module.exports = KR;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+<script>
+// 記帳レビュー：残高・月次推移のチェック。checks.runReview の最後に呼ばれる
+// 残高は「取込開始時点の残高（会社ルール or 月次推移BSのCSV）＋仕訳の増減」で計算する。開始時点の残高が分からないものは断定しない
+(function (root) {
+  'use strict';
+  const KR = root.KR = root.KR || {};
+  const U = KR.util, M = KR.model;
+  const WATCH = [
+    { re: /^(売掛金|未収入金|未収金|受取手形)/, what: '回収', docs: ['請求書・入金の記録（どの請求が未回収か）', '取引先への残高確認'] },
+    { re: /^(買掛金|未払金|未払費用)/, what: '支払', docs: ['請求書・支払の記録（どの請求が未払か）', '取引先からの残高の通知'] },
+    { re: /^(仮払金|立替金|前払金|前渡金|仮受金|預り金|前受金)/, what: '精算', docs: ['精算書・領収書', '相手先・内容が分かる資料'] },
+  ];
+  const OFFICER_RE = /役員.*(貸付金|借入金)|^(短期|長期)?貸付金.*役員/;
+  const sev = (a, t) => Math.abs(a) >= t.high ? 'high' : Math.abs(a) >= t.mid ? 'mid' : 'low';
+  const monthsBetween = (a, b) => (+b.slice(0, 4) - +a.slice(0, 4)) * 12 + (+b.slice(5, 7) - +a.slice(5, 7));
+  const signed = (p, side) => (p.side === side ? p.amount : -p.amount);
+
+  function run(ctx) {
+    const { company, entries, all, month, t, view, add, suppressed, notes, findings } = ctx, bs = ctx.bs || null;
+    if (!entries.length) return;
+    const mEnd = U.monthEnd(month), first = entries[0].date, firstM = first.slice(0, 7);
+    const upto = all.filter(p => p.entry.date <= mEnd);
+    const dataMonths = new Set(entries.map(e => e.month));
+    const span = []; for (let m = firstM; m <= month; m = U.addMonths(m, 1)) span.push(m);
+    const gaps = span.filter(m => !dataMonths.has(m));
+    const byAcc = U.groupBy(upto, p => p.account);
+
+    // ---- 取込開始時点の残高 ----
+    const op = company.opening || { date: '', balances: [] }, opRows = (op.balances || []).filter(r => r.account && r.amount !== '' && r.amount != null);
+    const opUsable = !!op.date && op.date <= first && op.date.slice(0, 7) === firstM;
+    if (opRows.length && !opUsable) notes.push('会社ルールの「取込開始時点の残高」（基準日 ' + (op.date || '未入力') + '）は、取り込んだ仕訳の最初の月（' + firstM + '）と合わないため使っていません。基準日を仕訳の最初の月の初日にしてください。');
+    const manual = opUsable ? opRows : [];
+    const bsOpen = name => { if (!bs || !bs.balances[name]) return null; if (bs.months[0] === firstM) return bs.opening[name]; const v = bs.balances[name][U.addMonths(firstM, -1)]; return v == null ? null : v; };
+
+    // ---- 滞留・マイナス残高 ----
+    if (gaps.length) notes.push('残高の確認：取り込んだ仕訳に抜けている月（' + gaps.join('・') + '）があるため、滞留・マイナス残高は判定していません。');
+    else {
+      const names = new Set([...byAcc.keys()].concat(manual.map(r => r.account)).concat(bs ? Object.keys(bs.balances) : []));
+      let unknownNeg = 0;
+      for (const acc of names) {
+        const w = WATCH.find(x => x.re.test(U.nfkc(acc))); if (!w) continue;
+        const side = M.normalSide(acc), ps = byAcc.get(acc) || [], man = manual.filter(r => r.account === acc);
+        // 取引先の空欄が1行でもある科目は、取引先別にすると相手が合わなくなるため科目全体で見る
+        const perPartner = ps.length > 0 && ps.every(p => p.pkey) && man.every(r => U.clean(r.partner));
+        const keys = new Map();
+        const key = (pkey, label) => { if (!keys.has(pkey)) keys.set(pkey, { label, ps: [], opening: null }); return keys.get(pkey); };
+        for (const p of ps) key(perPartner ? p.pkey : '', perPartner ? p.partner : '').ps.push(p);
+        if (perPartner) { for (const k of keys.values()) k.opening = man.length ? 0 : null; for (const r of man) key(U.normPartner(r.partner), r.partner).opening = Number(r.amount); }
+        else { const k = key('', ''), m0 = man.find(r => !U.clean(r.partner)), b = bsOpen(acc); k.opening = m0 ? Number(m0.amount) : (man.length ? man.reduce((s, r) => s + Number(r.amount), 0) : b); k.openSrc = m0 || man.length ? '会社ルール' : (b != null ? '月次推移BS' : null); }
+        for (const [pkey, k] of keys) {
+          const known = k.opening != null, name = acc + (perPartner ? ' ' + k.label : '（科目全体）');
+          // 先入先出：減少は古い増加から順に消し込む（請求書単位のデータがないための仮定）
+          const lots = []; let carry = 0;
+          if (known && k.opening > 0) lots.push({ date: null, amount: k.opening }); else if (known) carry = -k.opening;
+          for (const p of k.ps.slice().sort((a, b) => a.entry.date < b.entry.date ? -1 : a.entry.date > b.entry.date ? 1 : 0)) {
+            let v = signed(p, side);
+            if (v > 0) { const c = Math.min(carry, v); carry -= c; v -= c; if (v > 0) lots.push({ date: p.entry.date, amount: v, p }); }
+            else { v = -v; while (v > 0 && lots.length) { const c = Math.min(lots[0].amount, v); lots[0].amount -= c; v -= c; if (!lots[0].amount) lots.shift(); } if (known) carry += v; }
+          }
+          const net = k.ps.reduce((s, p) => s + signed(p, side), 0), balance = known ? k.opening + net : null, remain = lots.reduce((s, l) => s + l.amount, 0);
+          const age = l => l.date ? monthsBetween(l.date.slice(0, 7), month) : monthsBetween(firstM, month) + 1;
+          const old = lots.filter(l => age(l) >= t.staleMonths), oldAmt = old.reduce((s, l) => s + l.amount, 0);
+          const perMonth = span.slice(-6).map(m => { const x = k.ps.filter(p => p.entry.month === m); return m + ' 増 ' + U.yen(x.filter(p => p.side === side).reduce((s, p) => s + p.amount, 0)) + '／減 ' + U.yen(x.filter(p => p.side !== side).reduce((s, p) => s + p.amount, 0)); });
+          const m = { partner: perPartner ? k.label : '', account: acc, amount: oldAmt, text: name };
+          if (old.length && oldAmt >= t.mid) {
+            const oldest = old[0];
+            add({
+              key: 'STALE|' + U.hash(acc + '|' + pkey + '|' + (oldest.date || 'open')), rolling: true, check: 'STALE', basis: 'data', severity: sev(oldAmt, t),
+              title: '滞留の可能性：' + name + ' ' + U.yen(oldAmt) + '（' + (oldest.date ? oldest.date + ' の計上分から' : '取込開始前から') + '未' + w.what + '）', amount: oldAmt, partner: m.partner, account: acc, date: oldest.date || first,
+              reason: name + ' のうち ' + U.yen(oldAmt) + ' が、' + t.staleMonths + 'か月以上' + w.what + 'されていません（古い計上から順に消し込んだ場合）。' + (known ? '対象月末の残高は ' + U.yen(balance) + ' です。' : '取込開始時点の残高が未登録のため、月末残高は確定していません（取込期間の未' + w.what + '額 ' + U.yen(remain) + '）。'),
+              entries: old.filter(l => l.p).map(l => view(l.p.entry)), entriesLabel: '未' + w.what + 'とみられる計上（' + t.staleMonths + 'か月以上前）',
+              calc: ['先入先出で消込：' + old.map(l => (l.date || '取込開始前（' + (k.openSrc || '会社ルール') + 'の残高）') + ' ' + U.yen(l.amount)).join('、'), '直近の月別の増減：' + perMonth.join('、'), known ? '月末残高 ＝ 開始時点 ' + U.yen(k.opening) + ' ＋ 増減 ' + U.yen(net) + ' ＝ ' + U.yen(balance) : '開始時点の残高：未登録'],
+              inference: ['請求書単位のデータがないため、どの計上が未' + w.what + 'かは先入先出の仮定による推定です。実際には新しい分が残り、古い分は' + w.what + '済みの可能性があります。', w.what === '回収' ? '入金の遅れ、入金を別の取引先名・別の科目で登録、値引・相殺の未処理、売上の二重計上のいずれかの可能性があります。' : w.what === '支払' ? '支払の遅れ、支払を別の取引先名・費用科目で直接登録（二重計上）、計上の誤りのいずれかの可能性があります。' : '精算の漏れ、精算を別の科目で登録、相手先の付け間違いのいずれかの可能性があります。'],
+              documents: w.docs.concat(['総勘定元帳（' + acc + '）']), nextAction: '元帳で計上と' + w.what + 'の対応を確認し、残っている理由を確かめてください。「売上資料との照合」に請求一覧を取り込むと、請求書単位で入金を確認できます。',
+              fixNote: '残っている理由がデータからは分からないため、修正案は示していません。',
+              question: (perPartner ? k.label + ' の' : '') + acc + ' ' + U.yen(oldAmt) + '（' + (oldest.date || '以前') + ' 計上分）について、' + w.what + 'の状況を教えてください。', match: m,
+            });
+          }
+          if (known && balance < 0 && -balance >= t.min) {
+            add({
+              key: 'NEG|' + month + '|' + U.hash(acc + '|' + pkey), check: 'NEGBAL', basis: 'data', severity: sev(balance, t),
+              title: 'マイナス残高：' + name + ' ' + U.yen(balance), amount: -balance, partner: m.partner, account: acc, date: mEnd,
+              reason: name + ' の対象月末の残高が ' + U.yen(balance) + ' です（通常は' + (side === 'D' ? '借方' : '貸方') + 'に残る科目）。',
+              entries: k.ps.filter(p => p.side !== side).slice(-3).map(p => view(p.entry)), entriesLabel: '直近の減少（最大3件）',
+              calc: ['開始時点 ' + U.yen(k.opening) + '（' + (k.openSrc || '会社ルール' + (perPartner && !man.some(r => U.normPartner(r.partner) === pkey) ? '。この取引先は登録がないため0円とみなす' : '')) + '）＋ 増減 ' + U.yen(net) + ' ＝ ' + U.yen(balance), '直近の月別の増減：' + perMonth.join('、')],
+              inference: [w.what === '回収' ? '入金に対応する売上の計上漏れ、過入金・二重入金、別の取引先の入金の付け間違い、開始時点の残高の登録漏れのいずれかの可能性があります。' : w.what === '支払' ? '支払に対応する仕入・経費の計上漏れ、二重払い、取引先の付け間違い、開始時点の残高の登録漏れのいずれかの可能性があります。' : '計上と精算の科目・相手先の食い違い、開始時点の残高の登録漏れの可能性があります。'],
+              documents: w.docs.concat(['総勘定元帳（' + acc + '）']), nextAction: '減少（入金・支払・精算）に対応する計上があるかを確認してください。',
+              fixNote: '原因がデータからは分からないため、修正案は示していません。', question: (perPartner ? k.label + ' の' : '') + acc + ' について、直近の' + (w.what === '回収' ? 'ご入金' : 'お支払い') + 'の内容（対象の請求）を教えてください。', match: Object.assign({}, m, { amount: -balance }),
+            });
+          } else if (!known && net < 0 && -net >= t.mid) unknownNeg++;
+        }
+      }
+      if (unknownNeg) notes.push('取込期間の増減がマイナスの債権債務・仮勘定が ' + unknownNeg + '件ありますが、取込開始時点の残高が未登録のため、マイナス残高かどうかは判定していません（会社ルールで登録できます）。');
+      notes.push('滞留の判定は、請求書単位のデータがないため「古い計上から順に消し込む」仮定による推定です。');
+    }
+
+    // ---- 役員貸付金・役員借入金の増減 ----
+    for (const [acc, ps] of byAcc) {
+      if (!OFFICER_RE.test(U.nfkc(acc))) continue;
+      const side = M.normalSide(acc), cur = ps.filter(p => p.entry.month === month); if (!cur.length) continue;
+      const inc = cur.filter(p => p.side === side).reduce((s, p) => s + p.amount, 0), dec = cur.filter(p => p.side !== side).reduce((s, p) => s + p.amount, 0);
+      const man = manual.find(r => r.account === acc), o = man ? Number(man.amount) : bsOpen(acc), bal = (o != null && !gaps.length) ? o + ps.reduce((s, p) => s + signed(p, side), 0) : null, loan = /貸付/.test(acc);
+      add({
+        key: 'OFF|' + month + '|' + U.hash(acc), check: 'OFFICER', basis: 'evidence', severity: sev(Math.max(inc, dec), t),
+        title: acc + 'の増減：増加 ' + U.yen(inc) + '／減少 ' + U.yen(dec) + (bal != null ? '（月末残高 ' + U.yen(bal) + '）' : ''), amount: Math.max(inc, dec), partner: '', account: acc, date: cur[0].entry.date,
+        reason: '対象月に「' + acc + '」が動いています（増加 ' + U.yen(inc) + '、減少 ' + U.yen(dec) + '）。会社と役員の間の貸借は、契約・利息・返済の取決めの確認が必要になる取引です。',
+        entries: cur.map(p => view(p.entry)),
+        calc: ['直近の月別の増減：' + span.slice(-6).map(m => { const x = ps.filter(p => p.entry.month === m); return m + ' ' + U.yen(x.reduce((s, p) => s + signed(p, side), 0)); }).join('、'), bal != null ? '月末残高 ＝ 開始時点 ' + U.yen(o) + ' ＋ 増減' : '月末残高：開始時点の残高が未登録（または仕訳に抜けている月がある）ため計算していません'],
+        inference: [loan ? '役員の個人的な支出の立替、仮払の未精算、資金の貸付のいずれかの可能性があります。貸付の場合、利息を受け取っていないと給与として課税される場合があります。' : '役員からの資金の借入、役員が立て替えた経費の計上、返済のいずれかの可能性があります。'],
+        sources: loan ? [M.SOURCES.ta2606] : [],
+        documents: ['金銭消費貸借契約書・返済予定', '取締役会・株主総会の議事録', '通帳（資金の移動）', '立替の場合は領収書'], nextAction: '取引の内容（貸付・借入・立替・返済）を確認し、契約と利息の取決めがあるかを確かめてください。',
+        fixNote: '取引の内容がデータからは分からないため、修正案は示していません。', question: cur.map(p => p.entry.date + ' ' + U.yen(p.amount)).join('、') + ' の「' + acc + '」について、内容（貸付・借入・立替・返済の別）と、契約書の有無を教えてください。',
+        match: { partner: '', account: acc, amount: Math.max(inc, dec), text: acc },
+      });
+    }
+
+    // ---- 期首残高・当期増減・期末残高の整合性（月次推移BSのCSVがあるとき）----
+    if (!bs) notes.push('残高の整合性（開始残高＋増減＝月末残高）：月次推移（貸借対照表）のCSVが取り込まれていないため判定していません。');
+    else if (!bs.months.includes(month)) notes.push('残高の整合性：月次推移（貸借対照表）のCSVに対象月（' + month + '）の列がないため判定していません。');
+    else {
+      const earlier = [];
+      for (const [acc, ps] of U.groupBy(all, p => p.account)) {
+        const b = bs.balances[acc]; if (!b) continue;
+        const rows = [];
+        for (const m of span) {
+          if (!bs.months.includes(m) || b[m] == null || !dataMonths.has(m)) continue;
+          const prev = m === bs.months[0] ? bs.opening[acc] : b[U.addMonths(m, -1)]; if (prev == null) continue;
+          rows.push({ m, prev, end: b[m], d: b[m] - prev, net: ps.filter(p => p.entry.month === m).reduce((s, p) => s + signed(p, 'D'), 0) });
+        }
+        if (!rows.length) continue;
+        // 残高の向き（借方残・貸方残）は、合う月が多い方とする。どちらも合わなければ名前から推定
+        const okD = rows.filter(r => r.d === r.net).length, okC = rows.filter(r => r.d === -r.net).length;
+        const sgn = okD > okC ? 1 : okC > okD ? -1 : (M.normalSide(acc) === 'D' ? 1 : -1);
+        for (const r of rows) {
+          const diff = r.d - sgn * r.net; if (!diff) continue;
+          if (r.m !== month) { earlier.push(acc + ' ' + r.m + '（差 ' + U.yen(diff) + '）'); continue; }
+          add({
+            key: 'INTEG|' + month + '|' + U.hash(acc), check: 'INTEG', basis: 'data', severity: sev(diff, t) === 'low' ? 'mid' : 'high',
+            title: '残高の整合性：' + acc + ' 仕訳帳の増減と試算表の差 ' + U.yen(diff), amount: Math.abs(diff), partner: '', account: acc, date: mEnd,
+            reason: '月次推移（貸借対照表）では「' + acc + '」が対象月に ' + U.yen(r.d) + ' 動いていますが、取り込んだ仕訳帳の増減は ' + U.yen(sgn * r.net) + ' で、' + U.yen(diff) + ' の差があります。',
+            calc: ['試算表：前月末 ' + U.yen(r.prev) + ' → 対象月末 ' + U.yen(r.end) + '（増減 ' + U.yen(r.d) + '）', '仕訳帳：対象月の' + (sgn > 0 ? '借方−貸方' : '貸方−借方') + ' ＝ ' + U.yen(sgn * r.net), '差 ＝ ' + U.yen(r.d) + ' − ' + U.yen(sgn * r.net) + ' ＝ ' + U.yen(diff)],
+            inference: ['仕訳帳CSVと月次推移CSVの出力した時点が違う（その間に登録・修正・削除があった）、仕訳帳CSVの出力条件（期間・絞込み）で一部が漏れている、のいずれかの可能性があります。', 'この差がある間は、この科目に関する他の指摘（重複・滞留など）も古いデータに基づいている可能性があります。'],
+            documents: ['freee の総勘定元帳（' + acc + '、対象月）', '仕訳帳CSV・月次推移CSVの出力日時と条件'], nextAction: '仕訳帳CSVと月次推移CSVを同じ時点で出力し直して取り込み、レビューを再実行してください。差が残る場合は、元帳で差額と同じ金額の取引を探します。',
+            fixNote: 'データの取り直しで解消するかを先に確認するため、修正案は示していません。', question: '（先方への質問は不要です。事務所内で、仕訳帳CSVと月次推移CSVを同じ時点で出力し直してください）', match: { partner: '', account: acc, amount: Math.abs(diff), text: acc },
+          });
+        }
+      }
+      if (earlier.length) notes.push('残高の整合性：対象月より前の月に、仕訳帳と試算表が合わない科目があります（' + earlier.slice(0, 8).join('、') + (earlier.length > 8 ? ' ほか' + (earlier.length - 8) + '件' : '') + '）。過去の月との比較は、この差の影響を受けている可能性があります。');
+    }
+
+    // ---- 月次の変動（前3か月・過去の範囲・前年同月との比較）と、売上の内訳に偏った変動 ----
+    const prev3 = [1, 2, 3].map(k => U.addMonths(month, -k));
+    if (!prev3.every(m => dataMonths.has(m))) { notes.push('月次の変動・売上の内訳：対象月の前3か月の仕訳がそろっていないため判定していません。'); return; }
+    const priorM = [...dataMonths].filter(m => m < month).sort(), lastYear = U.addMonths(month, -12), hasLY = dataMonths.has(lastYear);
+    if (!hasLY) notes.push('前年同月（' + lastYear + '）の仕訳が取り込まれていないため、前年同月比較は行っていません。季節による変動は、取込済みの月の範囲（' + priorM[0] + '〜）だけで見ています。');
+    const pl = all.filter(p => p.kind === 'pl');
+    const cls = new Map(); const clsOf = a => { if (!cls.has(a)) cls.set(a, M.plClass(company, a)); return cls.get(a); };
+    const val = p => clsOf(p.account) === 'rev' ? signed(p, 'C') : signed(p, 'D');
+    const series = (ps, m) => ps.filter(p => p.entry.month === m).reduce((s, p) => s + val(p), 0);
+    const judge = (ps, ratio) => {
+      const cur = series(ps, month), prior = priorM.map(m => series(ps, m)), med = U.median(prev3.map(m => series(ps, m))), delta = cur - med;
+      const out = cur > Math.max(...prior) || cur < Math.min(...prior), ly = hasLY ? series(ps, lastYear) : null;
+      const flag = Math.abs(delta) >= t.high && Math.abs(delta) >= Math.abs(med) * ratio && out;
+      const seasonal = flag && ly != null && ly !== 0 && Math.abs(cur - ly) <= Math.abs(ly) * 0.2;
+      return { cur, prior, med, delta, flag: flag && !seasonal, seasonal, ly };
+    };
+    const calcOf = j => ['対象月 ' + U.yen(j.cur) + '、前3か月の中央値 ' + U.yen(j.med) + '（差 ' + (j.delta > 0 ? '+' : '') + U.yen(j.delta) + '）', '取込済みの過去の月：' + priorM.slice(-6).map((m, i, a) => m + ' ' + U.yen(j.prior[j.prior.length - a.length + i])).join('、') + '（最小 ' + U.yen(Math.min(...j.prior)) + '〜最大 ' + U.yen(Math.max(...j.prior)) + '）', '前年同月：' + (j.ly != null ? U.yen(j.ly) : 'データなし'), '判定の条件：前3か月の中央値との差が ' + U.yen(t.high) + ' 以上、かつ過去の月の範囲の外'];
+    const trend = (id, label, ps, ratio, isTotal) => {
+      const j = judge(ps, ratio);
+      if (j.seasonal) { suppressed.push({ check: 'TREND', text: label + '：前3か月とは差がありますが、前年同月（' + U.yen(j.ly) + '）と同程度のため、季節による変動とみなし指摘していません' }); return; }
+      if (!j.flag) return;
+      if (!isTotal) {
+        const explained = findings.filter(f => ['RECUR', 'AMOUNT', 'ACCOUNT', 'DUP'].includes(f.check) && f.account === label).reduce((s, f) => s + f.amount, 0);
+        if (explained >= Math.abs(j.delta) * 0.5) { suppressed.push({ check: 'TREND', text: label + '：前3か月の中央値との差 ' + U.yen(j.delta) + ' は、個別の指摘（計上漏れ・金額・科目・重複）で説明がつくため、月次の変動としては指摘していません' }); return; }
+      }
+      const cur = ps.filter(p => p.entry.month === month), by = [...U.groupBy(cur, p => p.partner || p.desc || '（取引先・摘要なし）')].map(([k, x]) => [k, x.reduce((s, p) => s + val(p), 0), x]).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 3);
+      add({
+        key: 'TREND|' + month + '|' + U.hash(id), check: 'TREND', basis: 'trend', severity: sev(j.delta, t) === 'high' ? 'mid' : 'low',
+        title: '月次の変動：' + label + ' ' + U.yen(j.cur) + '（前3か月の中央値 ' + U.yen(j.med) + '、' + (j.delta > 0 ? '+' : '') + U.yen(j.delta) + '）', amount: Math.abs(j.delta), partner: '', account: label, date: mEnd,
+        reason: label + ' の対象月の金額が、前3か月の中央値から ' + U.yen(Math.abs(j.delta)) + ' ' + (j.delta > 0 ? '増えて' : '減って') + 'おり、取込済みの過去の月の範囲も外れています。変動があること自体は誤りを意味しません。',
+        entries: isTotal ? [] : by.flatMap(b => b[2]).slice(0, 5).map(p => view(p.entry)), entriesLabel: '対象月の主な取引（最大5件）',
+        calc: calcOf(j).concat(isTotal ? [] : ['対象月の内訳（上位3）：' + (by.map(b => b[0] + ' ' + U.yen(b[1])).join('、') || 'なし')]),
+        inference: ['季節による変動、事業の拡大・縮小、臨時の取引、計上月のずれ、計上漏れ・二重計上、科目の変更のいずれの可能性もあります。' + (hasLY ? '' : '前年同月のデータがないため、季節性は判断できていません。')],
+        documents: ['総勘定元帳（' + (isTotal ? '該当する科目' : label) + '、対象月と前月）', '変動の理由が分かる資料（契約・請求書など）'], nextAction: '内訳を見て、変動の理由が説明できるかを確認してください。説明がつけば「問題なし」とし、理由をメモに残します。',
+        fixNote: '変動だけでは誤りと判断できないため、修正案は示していません。', question: month.replace('-', '年') + '月の「' + label + '」が、これまでの月と比べて ' + U.yen(Math.abs(j.delta)) + ' ' + (j.delta > 0 ? '多く' : '少なく') + 'なっています。理由として思い当たることがあれば教えてください。',
+        match: { partner: '', account: label, amount: Math.abs(j.delta), text: label },
+      });
+    };
+    const rev = pl.filter(p => clsOf(p.account) === 'rev'), cogs = pl.filter(p => clsOf(p.account) === 'cogs'), exp = pl.filter(p => clsOf(p.account) === 'exp');
+    trend('T:rev', '売上高の合計', rev, 0.3, true);
+    if (cogs.length && rev.length) trend('T:gross', '粗利（売上高−売上原価）', rev.concat(cogs.map(p => Object.assign({}, p, { account: rev[0].account }))), 0.3, true);   // 原価を収益科目として扱う＝借方がマイナスになる
+    else if (!cogs.length) notes.push('粗利：売上原価に当たる科目（仕入高など）が見当たらないため、粗利の比較は行っていません（科目の種類は会社ルールで変更できます）。');
+    trend('T:exp', '経費の合計', exp, 0.3, true);
+    for (const [acc, ps] of U.groupBy(pl, p => p.account)) trend('A:' + acc, acc, ps, 0.5, false);
+
+    // 売上の内訳：ある区分だけが大きく減り、ほかは減っていないとき
+    const revCur = rev.filter(p => p.entry.month === month || prev3.includes(p.entry.month));
+    for (const [dim, label, fn] of [['partner', '取引先', p => p.partner], ['item', '品目', p => p.item], ['dept', '部門', p => p.dept]]) {
+      if (!revCur.length || revCur.filter(p => fn(p)).length < revCur.length * 0.8) { if (dim === 'partner' && revCur.length) notes.push('売上の内訳（取引先別）：売上の仕訳の2割以上で取引先が空欄のため判定していません。'); continue; }
+      const groups = U.groupBy(revCur, p => dim === 'partner' ? p.pkey : U.clean(fn(p)));
+      for (const [g, ps] of groups) {
+        if (!g) continue;
+        const cur = series(ps, month), med = U.median(prev3.map(m => series(ps, m))), drop = med - cur;
+        const others = revCur.filter(p => !ps.includes(p)), oCur = series(others, month), oMed = U.median(prev3.map(m => series(others, m)));
+        if (!(med >= t.mid && cur < med * 0.5 && drop >= t.high && oCur >= oMed * 0.8)) continue;
+        const name = fn(ps[0]);
+        if (dim === 'partner' && cur === 0 && findings.some(f => f.check === 'RECUR' && U.normPartner(f.partner) === g)) continue;
+        add({
+          key: 'MIX|' + month + '|' + U.hash(dim + '|' + g), check: 'MIX', basis: 'trend', severity: sev(drop, t) === 'high' ? 'mid' : 'low',
+          title: '売上の内訳の変動：' + label + '「' + name + '」 ' + U.yen(cur) + '（前3か月の中央値 ' + U.yen(med) + '）', amount: drop, partner: dim === 'partner' ? name : '', account: ps[0].account, date: mEnd,
+          reason: label + '「' + name + '」の売上が、前3か月の中央値 ' + U.yen(med) + ' から ' + U.yen(cur) + ' に減っています。ほかの' + label + 'の売上（' + U.yen(oCur) + '、前3か月の中央値 ' + U.yen(oMed) + '）は同じようには減っていません。',
+          entries: ps.filter(p => p.entry.month === month).map(p => view(p.entry)), comparison: { label: '前3か月のこの' + label + 'の売上', entries: ps.filter(p => p.entry.month !== month).sort((a, b) => a.entry.date < b.entry.date ? -1 : 1).map(p => view(p.entry)) },
+          calc: [prev3.slice().reverse().map(m => m + ' ' + U.yen(series(ps, m))).join('、') + ' → 対象月 ' + U.yen(cur), '判定の条件：前3か月の中央値の半分未満、減少額 ' + U.yen(t.high) + ' 以上、ほかの' + label + 'は中央値の8割以上'],
+          inference: ['取引の縮小・終了、請求月のずれ、計上漏れ、別の' + label + '・別の科目での計上のいずれかの可能性があります。'],
+          documents: ['請求書の控え・売上の集計資料', '契約の状況が分かる資料'], nextAction: '対象月の請求の状況を確認してください。「売上資料との照合」に請求一覧を取り込むと、計上漏れを請求書単位で確認できます。',
+          fixNote: '減少の理由がデータからは分からないため、修正案は示していません。', question: name + ' 向けの ' + month.replace('-', '年') + '月の売上が、これまでより少なくなっています（' + U.yen(med) + ' 前後 → ' + U.yen(cur) + '）。請求の状況を教えてください。',
+          match: { partner: dim === 'partner' ? name : '', account: ps[0].account, amount: drop, text: name },
+        });
+      }
+    }
+  }
+
+  KR.balance = { run };
   if (typeof module !== 'undefined' && module.exports) module.exports = KR;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
@@ -1000,6 +1309,147 @@ table.entries td:first-child{white-space:nowrap}
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
 <script>
+// 記帳レビュー：資料との照合（売上資料・請求一覧 ⇔ 売上・入金、給与資料 ⇔ 給与・預り金・支払）
+// 区分は口座明細の照合と同じ「一致」「差額あり」「片側のみ」「同一取引か要確認」
+(function (root) {
+  'use strict';
+  const KR = root.KR = root.KR || {};
+  const U = KR.util, M = KR.model, RC = KR.reconcile;
+  const PAY_RE = /役員報酬|役員給与|給料|給与|賃金|賞与|雑給/, OFFICER_PAY_RE = /役員/;
+  const sevOf = (a, t) => Math.abs(a) >= t.high ? 'high' : Math.abs(a) >= t.mid ? 'mid' : 'low';
+
+  // ---------- 売上資料 ----------
+  function matchSales(company, lines, invoices, month, opts) {
+    const o = Object.assign({ window: 3, feeMax: 1000, graceDays: 60, files: {} }, opts), mEnd = U.monthEnd(month);
+    const entries = M.buildEntries(company, lines), view = e => M.entryView(e, o.files);
+    const inv = invoices.map((l, i) => Object.assign({ i, pkey: U.normPartner(l.partner) }, l));
+    // 売上の計上：対象月の請求 ⇔ 対象月の収益科目の貸方
+    const sInv = inv.filter(l => l.date.slice(0, 7) === month);
+    const book = entries.filter(e => e.month === month).flatMap(e => e.postings.filter(p => p.kind === 'pl' && p.side === 'C' && M.plClass(company, p.account) === 'rev').map(p => ({ date: e.date, amount: p.amount, partner: p.partner, pkey: p.pkey, desc: p.desc, counter: p.account, entry: view(e) })));
+    const results = [], left = { s: [], b: [] };
+    for (const pk of new Set(sInv.map(l => l.pkey).concat(book.map(b => b.pkey)))) {
+      const S = sInv.filter(l => l.pkey === pk), B = book.filter(b => b.pkey === pk);
+      const rec = RC.reconcile(S, B, { window: o.window, comboWindow: o.window, feeMax: 0 });
+      for (const r of rec.results) {
+        if (r.category === 'single') { (r.side === 'statement' ? left.s : left.b).push(r.side === 'statement' ? r.statement[0] : r.book[0]); continue; }
+        results.push({ category: r.category, invoices: r.statement, book: r.book, note: r.note.replace(/明細/g, '請求') });
+      }
+    }
+    // 同じ取引先で請求・帳簿が1件ずつ残り、日付が近ければ「差額あり」
+    for (const pk of new Set(left.s.map(l => l.pkey))) {
+      const S = left.s.filter(l => l.pkey === pk), B = left.b.filter(b => b.pkey === pk);
+      if (pk && S.length === 1 && B.length === 1 && Math.abs(U.dayDiff(S[0].date, B[0].date)) <= o.window) {
+        const d = S[0].amount - B[0].amount, ratio = S[0].amount / B[0].amount;
+        results.push({ category: 'diff', invoices: S, book: B, diff: d, taxGuess: Math.abs(ratio - 1.1) < 0.001 || Math.abs(ratio - 1.08) < 0.001, note: '請求 ' + U.yen(S[0].amount) + ' − 帳簿 ' + U.yen(B[0].amount) + ' ＝ ' + U.yen(d) });
+        left.s = left.s.filter(x => x !== S[0]); left.b = left.b.filter(x => x !== B[0]);
+      }
+    }
+    // 取引先名が違うが金額と日付が合うもの：同じ取引の可能性
+    for (const s of left.s.slice()) {
+      const cs = left.b.filter(b => b.amount === s.amount && Math.abs(U.dayDiff(s.date, b.date)) <= o.window);
+      if (!cs.length) continue;
+      results.push({ category: 'unsure', invoices: [s], book: cs, note: '金額と日付は合いますが、取引先名が違います（請求「' + s.partner + '」／帳簿「' + cs.map(b => b.partner || '空欄').join('・') + '」）' });
+      left.s = left.s.filter(x => x !== s); left.b = left.b.filter(b => !cs.includes(b));
+    }
+    for (const s of left.s) results.push({ category: 'single', side: 'invoice', invoices: [s], book: [], note: '請求にあり、帳簿の売上にない' });
+    for (const b of left.b) results.push({ category: 'single', side: 'book', invoices: [], book: [b], note: '帳簿の売上にあり、請求にない' });
+    const counts = { match: 0, diff: 0, single: 0, unsure: 0 }; results.forEach(r => counts[r.category]++);
+
+    // 入金：資料のすべての請求（対象月末まで）⇔ 帳簿の入金（口座の借方で、相手が同じ取引先の債権・売上）
+    const receipts = entries.filter(e => e.date <= mEnd).flatMap(e => {
+      const cr = e.postings.find(p => p.side === 'C' && p.pkey && (p.kind === 'bs' ? /売掛金|未収/.test(p.account) : M.plClass(company, p.account) === 'rev'));
+      return cr ? e.postings.filter(p => p.side === 'D' && p.kind === 'fund').map(p => ({ date: e.date, amount: p.amount, pkey: cr.pkey, partner: cr.partner, used: false, entry: view(e) })) : [];
+    });
+    const pay = [];
+    for (const pk of new Set(inv.map(l => l.pkey))) {
+      const I = inv.filter(l => l.pkey === pk && l.date <= mEnd).sort((a, b) => a.date < b.date ? -1 : 1).map(l => ({ inv: l, status: null })), Rc = receipts.filter(r => r.pkey === pk).sort((a, b) => a.date < b.date ? -1 : 1);
+      const open = () => I.filter(x => !x.status), free = () => Rc.filter(r => !r.used);
+      for (const x of open()) { const r = free().find(r => r.amount === x.inv.amount && r.date >= x.inv.date); if (r) { r.used = true; Object.assign(x, { status: 'paid', receipts: [r], note: r.date + ' に同額の入金' }); } }
+      for (const r of free()) {   // 1回の入金 ＝ 複数の請求の合計
+        const pool = open().filter(x => x.inv.date <= r.date && x.inv.amount < r.amount);
+        const sets = pool.length >= 2 ? RC.subsets(pool.map(x => ({ amount: x.inv.amount, x })), r.amount, 4) : [];
+        if (sets.length === 1) { r.used = true; sets[0].forEach(s => Object.assign(s.x, { status: 'paid', receipts: [r], note: r.date + ' の入金 ' + U.yen(r.amount) + ' に合算（' + sets[0].length + '件分）' })); }
+      }
+      for (const x of open()) {   // 手数料程度の差額
+        const cs = free().filter(r => r.date >= x.inv.date && x.inv.amount - r.amount > 0 && x.inv.amount - r.amount <= o.feeMax);
+        if (cs.length === 1) { cs[0].used = true; Object.assign(x, { status: 'paidDiff', receipts: [cs[0]], diff: x.inv.amount - cs[0].amount, note: cs[0].date + ' の入金 ' + U.yen(cs[0].amount) + '（差額 ' + U.yen(x.inv.amount - cs[0].amount) + '）' }); }
+      }
+      for (const x of open()) {
+        const due = x.inv.due, limit = due || U.addDays(x.inv.date, o.graceDays);
+        if (limit < mEnd) Object.assign(x, { status: 'overdue', note: due ? '入金期日 ' + due + ' を過ぎても、帳簿に入金が見当たりません' : '入金期日の記載がなく、請求から ' + o.graceDays + '日を過ぎても帳簿に入金が見当たりません' });
+        else Object.assign(x, { status: 'notDue', note: due ? '入金期日 ' + due + '（対象月末より後）' : '入金期日の記載なし（請求から ' + o.graceDays + '日以内）' });
+      }
+      pay.push(...I);
+    }
+    const payCounts = { paid: 0, paidDiff: 0, overdue: 0, notDue: 0 }; pay.forEach(x => payCounts[x.status]++);
+    return { results, counts, pay, payCounts, options: o, stats: { invoices: sInv.length, book: book.length, all: inv.length } };
+  }
+  function salesFindings(res, ctx) {
+    const t = M.thresholds(ctx.company), out = [];
+    const invRows = l => l.map(s => ({ row: s.row, date: s.date, desc: [s.partner, s.no ? '請求書 ' + s.no : '', s.item, s.due ? '期日 ' + s.due : ''].filter(Boolean).join('／'), amount: s.amount, balance: null }));
+    const base = (r, key) => ({ key: 'SLS|' + U.hash(ctx.month + '|' + key), check: 'SALES', month: ctx.month, entries: (r.book || []).map(b => b.entry), entriesLabel: '帳簿側', statementRows: invRows(r.invoices || []), statementFile: ctx.fileName, statementLabel: '請求一覧', comparison: null, sources: [], fix: null, inference: [], calc: [] });
+    const invKey = l => l.map(s => [s.date, s.pkey, s.amount, s.no].join('~')).join(','), bookKey = l => l.map(b => [b.date, b.pkey, b.amount].join('~')).join(',');
+    for (const r of res.results) {
+      if (r.category === 'match') continue;
+      const first = r.invoices[0] || r.book[0], partner = first.partner || '', amount = r.category === 'diff' ? Math.abs(r.diff) : Math.abs(first.amount);
+      const f = Object.assign(base(r, r.category + invKey(r.invoices) + '|' + bookKey(r.book)), { date: first.date, partner, account: '売上高', amount, reconCategory: RC.CATEGORY[r.category], match: { partner, account: '売上高', amount, text: first.item || first.desc || '' } });
+      if (r.category === 'diff') Object.assign(f, { basis: 'data', severity: sevOf(r.diff, t), title: '売上資料：差額あり ' + partner + ' ' + U.yen(r.diff) + '（請求 ' + U.yen(r.invoices[0].amount) + '／帳簿 ' + U.yen(r.book[0].amount) + '）', reason: partner + ' の請求額と、帳簿の売上の金額が違います。', calc: [r.note], inference: [r.taxGuess ? '請求額が帳簿のちょうど1.1倍（または1.08倍）のため、税込と税抜の違いの可能性があります（帳簿が税抜経理か、請求一覧が税込かを確認してください）。' : '請求の修正・値引、計上金額の入力誤り、請求一覧と帳簿で税込・税抜が違う、のいずれかの可能性があります。'], documents: ['請求書の控え', '見積・契約（金額の根拠）'], nextAction: 'どちらの金額が正しいかを請求書で確認してください。', fixNote: '正とする資料（' + (ctx.truth === 'book' ? '帳簿' : '請求一覧') + '）は利用者の指定です。金額の違いの理由が分からないため、修正案は示していません。', question: partner + ' 様あての ' + first.date + ' の請求について、請求額（' + U.yen(r.invoices[0].amount) + '）が確定額かを教えてください。' });
+      else if (r.category === 'unsure') Object.assign(f, { basis: 'evidence', severity: 'low', title: '売上資料：同一取引か要確認 ' + U.yen(first.amount) + '（' + r.note.replace(/^.*?（|）$/g, '') + '）', reason: r.note + '。', documents: ['請求書の控え', '取引先の正式名称'], nextAction: '同じ取引かどうかを確認し、同じなら取引先名をそろえてください（名前がそろうと次回から一致になります）。', fixNote: '同じ取引かどうかが決まらないため、修正案は示していません。', question: first.date + ' の ' + U.yen(first.amount) + ' の請求先の正式名称を教えてください。' });
+      else if (r.side === 'invoice') Object.assign(f, { basis: 'data', severity: sevOf(amount, t), title: '売上資料：請求のみ（売上の計上が見当たらない）' + partner + ' ' + first.date + ' ' + U.yen(first.amount), reason: '請求一覧の ' + partner + ' ' + first.date + ' ' + U.yen(first.amount) + ' に対応する売上が、対象月の帳簿に見つかりません。', inference: ['売上の計上漏れ、別の月への計上、別の取引先名・科目での計上、請求の取消のいずれかの可能性があります。'], documents: ['請求書の控え', '納品・検収の記録（売上の計上日）'], nextAction: ctx.truth === 'book' ? '帳簿を正とする指定のため、請求一覧の誤り・取消がないかを先に確認してください。' : '請求が有効かを確認し、未計上であれば売上の登録を検討してください。', fixNote: '計上日・税区分は取引の内容で決まるため、修正案は示していません。', question: partner + ' 様あての ' + first.date + ' の請求（' + U.yen(first.amount) + '）は有効でしょうか。納品・作業完了の日もあわせて教えてください。' });
+      else Object.assign(f, { basis: 'data', severity: sevOf(amount, t), title: '売上資料：帳簿のみ（請求一覧にない売上）' + partner + ' ' + first.date + ' ' + U.yen(first.amount), reason: '帳簿の売上 ' + partner + ' ' + first.date + ' ' + U.yen(first.amount) + ' に対応する請求が、請求一覧に見つかりません。', inference: ['請求一覧の対象期間・出力条件から漏れている、請求書を別の方法で発行した、売上の二重計上・計上月の誤りのいずれかの可能性があります。'], documents: ['請求書の控え', '請求一覧の出力条件'], nextAction: '請求書が発行されているかを確認してください。', fixNote: '請求の有無がデータからは分からないため、修正案は示していません。', question: partner + ' 様への ' + first.date + ' の売上（' + U.yen(first.amount) + '）について、請求書の控えをご共有ください。' });
+      out.push(f);
+    }
+    for (const x of res.pay) {
+      if (x.status !== 'overdue' && x.status !== 'paidDiff') continue;
+      const s = x.inv, r = { invoices: [s], book: (x.receipts || []) };
+      const f = Object.assign(base(r, 'pay' + x.status + invKey([s])), { date: s.date, partner: s.partner, account: '売掛金', match: { partner: s.partner, account: '売掛金', amount: s.amount, text: s.item || '' } });
+      if (x.status === 'overdue') Object.assign(f, { basis: s.due ? 'data' : 'evidence', severity: sevOf(s.amount, t), amount: s.amount, reconCategory: '片側のみ', title: '入金が見当たらない請求：' + s.partner + ' ' + s.date + ' ' + U.yen(s.amount) + (s.due ? '（期日 ' + s.due + '）' : ''), reason: x.note + '（対象月末 ' + U.monthEnd(ctx.month) + ' まで、同じ取引先の入金を、同額・複数請求の合算・' + U.yen(res.options.feeMax) + ' 以内の差額で探した結果）。', inference: ['入金の遅れ、入金を別の取引先名・別の科目で登録、値引・相殺、請求の取消のいずれかの可能性があります。'], documents: ['通帳（対象の入金）', '請求書の控え・入金の通知'], nextAction: '通帳で入金の有無を確認してください。入金済みなら、帳簿の登録内容（取引先・科目）を確認します。', fixNote: '入金の有無がデータからは分からないため、修正案は示していません。', question: s.partner + ' 様あての ' + s.date + ' の請求（' + U.yen(s.amount) + (s.due ? '、期日 ' + s.due : '') + '）について、ご入金の状況を教えてください。' });
+      else Object.assign(f, { basis: 'data', severity: 'low', amount: x.diff, reconCategory: '差額あり', title: '入金の差額：' + s.partner + ' 請求 ' + U.yen(s.amount) + ' に対し入金 ' + U.yen(s.amount - x.diff) + '（差 ' + U.yen(x.diff) + '）', reason: x.note + '。', inference: ['振込手数料の控除の可能性があります。値引・相殺の可能性もあります。'], documents: ['入金の通知', '手数料負担の取決め'], nextAction: '差額の理由を確認し、売掛金に残っている差額の処理（支払手数料など）を検討してください。', fixNote: '差額の理由がデータからは分からないため、修正案は示していません。', question: s.partner + ' 様からのご入金が請求額より ' + U.yen(x.diff) + ' 少なくなっています。振込手数料の控除でしょうか。' });
+      out.push(f);
+    }
+    return out;
+  }
+
+  // ---------- 給与資料 ----------
+  function matchPayroll(company, lines, rows, month, opts) {
+    const files = (opts && opts.files) || {}, R = rows.filter(r => r.date.slice(0, 7) === month), has = (opts && opts.has) || { cls: true, deduct: true, net: true };
+    const es = M.buildEntries(company, lines).filter(e => e.month === month && e.postings.some(p => p.side === 'D' && PAY_RE.test(p.account)));
+    const sumP = f => es.reduce((s, e) => s + e.postings.filter(f).reduce((x, p) => x + p.amount, 0), 0), sumR = f => R.reduce((s, r) => s + (f(r) || 0), 0);
+    const gross = p => p.side === 'D' && PAY_RE.test(p.account), items = [];
+    const push = (id, label, doc, book, hint) => items.push({ id, label, doc, book, diff: doc - book, category: doc === book ? 'match' : (!es.length || !R.length) ? 'single' : 'diff', hint });
+    if (has.cls) { push('gross-officer', '総支給額（役員）', sumR(r => r.officer ? r.gross : 0), sumP(p => gross(p) && OFFICER_PAY_RE.test(p.account)), '帳簿は「役員」を含む給与科目の借方'); push('gross-staff', '総支給額（従業員）', sumR(r => r.officer ? 0 : r.gross), sumP(p => gross(p) && !OFFICER_PAY_RE.test(p.account)), '帳簿は役員以外の給与科目の借方'); }
+    else push('gross', '総支給額', sumR(r => r.gross), sumP(gross), '帳簿は給与科目（役員報酬・給料手当・賞与など）の借方');
+    if (has.deduct) push('deduct', '控除合計（預り金）', sumR(r => r.deduct), sumP(p => p.side === 'C' && /預り金/.test(p.account)), '帳簿は給与の仕訳の貸方「預り金」');
+    if (has.net) push('net', '差引支給額（支払）', sumR(r => r.net), sumP(p => p.side === 'C' && (p.kind === 'fund' || /未払金|未払費用/.test(p.account))), '帳簿は給与の仕訳の貸方（口座、または未払金・未払費用）');
+    const counts = { match: 0, diff: 0, single: 0, unsure: 0 }; items.forEach(i => counts[i.category]++);
+    return { items, counts, rows: R, entries: es.map(e => M.entryView(e, files)), stats: { people: R.length, entries: es.length } };
+  }
+  function payrollFindings(res, ctx) {
+    const t = M.thresholds(ctx.company), out = [];
+    for (const i of res.items) {
+      if (i.category === 'match') continue;
+      const amount = Math.abs(i.diff);
+      out.push({
+        key: 'PAY|' + U.hash(ctx.month + '|' + i.id), check: 'PAY', month: ctx.month, basis: 'data', severity: sevOf(amount, t), reconCategory: RC.CATEGORY[i.category], date: (res.rows[0] || {}).date || ctx.month + '-01', partner: '', account: '給与', amount,
+        title: '給与資料：' + RC.CATEGORY[i.category] + ' ' + i.label + ' ' + U.yen(i.diff) + '（資料 ' + U.yen(i.doc) + '／帳簿 ' + U.yen(i.book) + '）',
+        reason: i.label + 'が、給与資料の合計 ' + U.yen(i.doc) + ' と、帳簿の合計 ' + U.yen(i.book) + ' で ' + U.yen(Math.abs(i.diff)) + ' 違います' + (i.category === 'single' ? '（' + (res.stats.entries ? '給与資料に対象月の行がありません' : '帳簿に対象月の給与の仕訳がありません') + '）' : '') + '。',
+        entries: res.entries, entriesLabel: '帳簿側（対象月の給与の仕訳）',
+        statementRows: res.rows.map(r => ({ row: r.row, date: r.date, desc: [r.name, r.officer ? '役員' : '', '総支給 ' + U.yen(r.gross), r.deduct != null ? '控除 ' + U.yen(r.deduct) : '', r.net != null ? '差引 ' + U.yen(r.net) : ''].filter(Boolean).join('／'), amount: -(r.net != null ? r.net : r.gross), balance: null })), statementFile: ctx.fileName, statementLabel: '給与資料',
+        comparison: null, sources: [], fix: null, calc: ['資料 ' + U.yen(i.doc) + ' − 帳簿 ' + U.yen(i.book) + ' ＝ ' + U.yen(i.diff), i.hint, '給与資料 ' + res.stats.people + '人分、帳簿の給与の仕訳 ' + res.stats.entries + '件（支給日が対象月のもの）'],
+        inference: ['支給額の改定・入力誤り、支給月と計上月のずれ、賞与・手当を別の科目で計上、控除の一部（社会保険料の本人負担分など）を預り金以外で処理、のいずれかの可能性があります。'],
+        documents: ['給与台帳・賃金台帳・給与明細', '通帳（振込額）', '役員の場合は報酬を決めた議事録'], nextAction: '人ごとに、給与資料と帳簿の金額を照合してください（この版の比較は月の合計どうしです）。',
+        fixNote: '正とする資料（' + (ctx.truth === 'book' ? '帳簿' : '給与資料') + '）は利用者の指定です。人ごとの内訳が帳簿にないため、修正案は示していません。', question: ctx.month.replace('-', '年') + '月支給分の' + i.label.replace(/（.*）/, '') + 'について、給与台帳をご共有ください（帳簿の金額と ' + U.yen(Math.abs(i.diff)) + ' の差があります）。',
+        match: { partner: '', account: '給与', amount, text: i.label },
+      });
+    }
+    return out;
+  }
+
+  KR.docs = { matchSales, salesFindings, matchPayroll, payrollFindings };
+  if (typeof module !== 'undefined' && module.exports) module.exports = KR;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+</script>
+<script>
 // 記帳レビュー：確認事項の状態（対応状況・メモ・履歴）、確認済みルールの適用、翌月への引継ぎ、上席への引継ぎ出力
 (function (root) {
   'use strict';
@@ -1015,10 +1465,12 @@ table.entries td:first-child{white-space:nowrap}
     for (const f of findings) {
       seen.add(f.key);
       const st = review.states[f.key] || (review.states[f.key] = { status: 'open', memo: '', reviewer: '', history: [], firstSeen: now });
+      // 月をまたいで続く事項（滞留など）：解決済みにしたものが後の月にも検出されたら、未確認に戻して記録を残す
+      if (st.month && st.month < f.month && !M.UNRESOLVED.includes(st.status)) { st.history.push({ at: now, by: '（自動）', from: st.status, to: 'open', memo: f.month + ' のレビューでも検出されたため、未確認に戻しました' }); st.status = 'open'; }
       st.finding = f; st.month = f.month; st.gone = false; st.lastSeen = now;
     }
     for (const [k, st] of Object.entries(review.states)) {
-      if (seen.has(k) || st.month !== month || !inScope(st.finding)) continue;
+      if (seen.has(k) || !inScope(st.finding) || !(st.month === month || (st.finding.rolling && st.month < month))) continue;
       if (st.status === 'open' && !st.history.length && !st.memo) delete review.states[k];   // 一度も触っていないものは残さない
       else st.gone = true;
     }
@@ -1103,7 +1555,7 @@ table.entries td:first-child{white-space:nowrap}
       L.push('- 状況：' + M.STATUS[it.status] + (it.carried ? '（' + it.month + ' から繰越）' : '') + (it.gone ? '（再実行では検出されず）' : '') + '　／　根拠の種類：' + M.BASIS[f.basis] + '　／　チェック：' + M.CHECKS[f.check]);
       L.push('- 指摘理由（データから確認できる事実）：' + f.reason);
       (f.entries || []).forEach(e => e.rows.forEach(r => L.push('  - ' + e.date + (e.slip ? ' 伝票' + e.slip : '') + ' ' + rowText(r) + (r.partner ? ' ' + r.partner : '') + (r.desc ? ' 「' + r.desc + '」' : '') + (r.file ? '（' + r.file + ' ' + r.row + '行目）' : ''))));
-      (f.statementRows || []).forEach(s => L.push('  - 明細 ' + s.date + ' ' + (s.amount > 0 ? '入金 ' : '出金 ') + U.yen(Math.abs(s.amount)) + ' ' + (s.desc || '') + '（' + (f.statementFile || '') + ' ' + s.row + '行目）'));
+      (f.statementRows || []).forEach(s => L.push('  - ' + (f.statementLabel || '明細') + ' ' + s.date + ' ' + (f.statementLabel ? '' : (s.amount > 0 ? '入金 ' : '出金 ')) + U.yen(Math.abs(s.amount)) + ' ' + (s.desc || '') + '（' + (f.statementFile || '') + ' ' + s.row + '行目）'));
       if (f.calc && f.calc.length) L.push('- 計算・比較：' + f.calc.join(' ／ '));
       if (f.inference && f.inference.length) L.push('- 推測（未確定）：' + f.inference.join(' '));
       if (f.impact) L.push('- 消費税への影響：' + f.impact);
@@ -1170,6 +1622,8 @@ table.entries td:first-child{white-space:nowrap}
     if (P) simple(10, '消耗品費', 32780, IN, '(株)オフィスサプライ', '未払金', '請求書 コピー用紙・トナー');
     simple(14, '広告宣伝費', 55000, IN, '(株)アドワークス', '普通預金', 'Web広告運用 ' + cur);
     if (P) simple(14, '広告宣伝費', 55000, IN, '(株)アドワークス', '普通預金', 'Web広告運用 ' + cur);
+    if (P) simple(17, '修繕費', 180000, IN, '(株)クリーン設備', '普通預金', 'エアコン修理');
+    if (P) r(23, '役員貸付金', 200000, '', '', '普通預金', 200000, '', '', '社長 仮払');
     simple(15, P ? '通信費' : '水道光熱費', vary(16400, m, 40, 100), IN, '東京電力EP', '普通預金', '電気料金 ' + prev);
     r(20, '普通預金', 330000, '', '(株)エース企画', '売掛金', 330000, '', '(株)エース企画', '入金 ' + prev);
     r(20, '普通預金', vary(205000, m - 1, 50, 1000), '', 'ビーライン(株)', '売掛金', vary(205000, m - 1, 50, 1000), '', 'ビーライン(株)', '入金 ' + prev);
@@ -1177,7 +1631,8 @@ table.entries td:first-child{white-space:nowrap}
     r(22, '普通預金', 55000, '', '(株)デルタ工業', '売掛金', 55000, '', '(株)デルタ工業', '入金 ライセンス料 ' + prev);
     // 売上（月末締め・翌月入金）
     r(25, '売掛金', 330000, '', '(株)エース企画', '売上高', 330000, OUT, '(株)エース企画', 'サイト運用 ' + cur);
-    r(25, '売掛金', vary(205000, m, 50, 1000), '', 'ビーライン(株)', '売上高', vary(205000, m, 50, 1000), OUT, 'ビーライン(株)', '制作費 ' + cur);
+    const bSales = P ? 82000 : vary(205000, m, 50, 1000);
+    r(25, '売掛金', bSales, '', 'ビーライン(株)', '売上高', bSales, OUT, 'ビーライン(株)', '制作費 ' + cur);
     r(25, '売掛金', 88000, '', '(株)デルタ工業', '売上高', 88000, OUT, '(株)デルタ工業', '保守料 ' + cur);
     r(25, '売掛金', 55000, '', '(株)デルタ工業', '売上高', 55000, OUT, '(株)デルタ工業', 'ライセンス料 ' + cur);
     if (m === 5 || m === 8) r(25, '売掛金', 550000, '', 'シーウェーブ(同)', '売上高', 550000, OUT, 'シーウェーブ(同)', '四半期レポート');
@@ -1219,6 +1674,37 @@ table.entries td:first-child{white-space:nowrap}
     const rows = out.map(x => { bal += x.amount; return [x.date.replace(/-/g, '/'), x.desc, x.amount < 0 ? -x.amount : '', x.amount > 0 ? x.amount : '', bal]; });
     return KR.csv.toCSV([['日付', '摘要', 'お支払金額', 'お預り金額', '残高']].concat(rows)).replace(/^﻿/, '');
   }
+  // 取込開始時点（2026-05-01）の残高。月次推移BSのサンプルと、会社ルールの取引先別残高の両方に使う
+  const OPEN = { '現金': 30000, '普通預金': 3000000, '売掛金': 330000 + vary(205000, 4, 50, 1000) + 143000, '仮払金': 80000, '役員貸付金': 0, '法人カード': 60000, '未払金': 0, '預り金': 115000 };
+  const MONTHS = ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'];
+  // 月次推移（貸借対照表）。仕訳から作り、10月の売掛金だけ 110,000円多くする（仕訳帳CSVより後に出力し、その間に売上が1件登録された想定）
+  function bsCSV() {
+    const cols = ['2026-04'].concat(MONTHS, ['2026-11', '2026-12', '2027-01', '2027-02', '2027-03']), bal = Object.assign({}, OPEN), rows = {};
+    for (const a of Object.keys(OPEN)) rows[a] = [OPEN[a], OPEN[a]];
+    for (const ym of MONTHS) {
+      for (const r of monthRows(ym, ym === '2026-10')) for (const [acc, amt, side] of [[r[2], r[3], 'D'], [r[6], r[7], 'C']]) if (acc in bal) bal[acc] += (KR.model.normalSide(acc) === side ? 1 : -1) * amt;
+      for (const a of Object.keys(OPEN)) rows[a].push(bal[a] + (a === '売掛金' && ym === '2026-10' ? 110000 : 0));
+    }
+    for (const a of Object.keys(OPEN)) while (rows[a].length < cols.length + 1) rows[a].push(rows[a][rows[a].length - 1]);
+    const line = (name, vals) => ['', name].concat(vals || cols.map(() => '').concat(['']));
+    const out = [['月次推移：貸借対照表_株式会社サンプル商会（架空）（期間：2026年04月～2027年03月、表示単位：円）'], ['勘定科目コード', '', '期首'].concat(cols), line('資産の部'), line('流動資産')];
+    for (const a of ['現金', '普通預金', '売掛金', '仮払金', '役員貸付金']) out.push(line(a, rows[a]));
+    out.push(line('負債の部'), line('流動負債'));
+    for (const a of ['法人カード', '未払金', '預り金']) out.push(line(a, rows[a]));
+    return KR.csv.toCSV(out).replace(/^\ufeff/, '');
+  }
+  // 請求一覧（9月・10月）。取引先名は帳簿と表記を変えてある（株式会社／(株)）
+  function invoicesCSV() {
+    const rows = [['請求日', '請求書番号', '取引先', '件名', '請求金額', '入金期日'],
+      ['2026/09/25', 'INV-0901', '株式会社エース企画', 'サイト運用 09月分', 330000, '2026/10/20'], ['2026/09/25', 'INV-0902', 'ビーライン株式会社', '制作費 09月分', vary(205000, 9, 50, 1000), '2026/10/20'],
+      ['2026/09/25', 'INV-0903', '株式会社デルタ工業', '保守料 09月分', 88000, '2026/10/22'], ['2026/09/25', 'INV-0904', '株式会社デルタ工業', 'ライセンス料 09月分', 55000, '2026/10/22'], ['2026/09/25', 'INV-0905', '株式会社デルタ工業', '追加作業', 33000, '2026/10/20'],
+      ['2026/10/25', 'INV-1001', '株式会社エース企画', 'サイト運用 10月分', 363000, '2026/11/20'], ['2026/10/25', 'INV-1002', 'ビーライン株式会社', '制作費 10月分', 82000, '2026/11/20'],
+      ['2026/10/25', 'INV-1003', '株式会社デルタ工業', '保守料 10月分', 88000, '2026/11/22'], ['2026/10/25', 'INV-1004', '株式会社デルタ工業', 'ライセンス料 10月分', 55000, '2026/11/22'], ['2026/10/31', 'INV-1005', 'シーウェーブ合同会社', 'スポット調査', 110000, '2026/11/30']];
+    return KR.csv.toCSV(rows).replace(/^\ufeff/, '');
+  }
+  function payrollCSV() {
+    return KR.csv.toCSV([['支給日', '氏名', '区分', '総支給額', '控除合計', '差引支給額'], ['2026/10/25', '山田 太郎（架空）', '役員', 500000, 70000, 430000], ['2026/10/25', '鈴木 花子（架空）', '従業員', 300000, 45000, 255000]]).replace(/^\ufeff/, '');
+  }
   function company() {
     const c = KR.model.newCompany('株式会社サンプル商会（架空）');
     Object.assign(c, {
@@ -1230,6 +1716,7 @@ table.entries td:first-child{white-space:nowrap}
       ],
       partnerRules: [{ id: 'p1', partner: '佐藤デザイン', account: '外注費', tax: '', note: '免税事業者（登録番号なし）' }],
       cashOpening: { date: '2026-05-01', amount: 30000 },
+      opening: { date: '2026-05-01', balances: [{ id: 'o1', account: '売掛金', partner: '(株)エース企画', amount: 330000 }, { id: 'o2', account: '売掛金', partner: 'ビーライン(株)', amount: vary(205000, 4, 50, 1000) }, { id: 'o3', account: '売掛金', partner: '(株)デルタ工業', amount: 143000 }] },
       notes: '駐車場は2区画を同額で毎月支払い。',
     });
     return c;
@@ -1242,9 +1729,12 @@ table.entries td:first-child{white-space:nowrap}
         { name: 'サンプル_仕訳帳_2026-10.csv', text: journalCSV(['2026-10'], true) },
       ],
       statement: { name: 'サンプル_普通預金明細_2026-10.csv', text: statementCSV(), account: '普通預金' },
+      bs: { name: 'サンプル_月次推移_貸借対照表.csv', text: bsCSV() },
+      invoices: { name: 'サンプル_請求一覧_2026-09〜10.csv', text: invoicesCSV() },
+      payroll: { name: 'サンプル_給与一覧_2026-10.csv', text: payrollCSV() },
     };
   }
-  KR.sample = { build, journalCSV, statementCSV, company };
+  KR.sample = { build, journalCSV, statementCSV, bsCSV, invoicesCSV, payrollCSV, company };
   if (typeof module !== 'undefined' && module.exports) module.exports = KR;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
@@ -1303,10 +1793,10 @@ table.entries td:first-child{white-space:nowrap}
   const $ = s => document.querySelector(s);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const now = () => new Date().toISOString();
-  const TABS = [['review', 'レビュー一覧'], ['import', 'データ取込'], ['recon', '明細との照合'], ['rules', '会社ルール'], ['handoff', '引継ぎ'], ['data', 'データと安全性']];
+  const TABS = [['review', 'レビュー一覧'], ['import', 'データ取込'], ['recon', '資料との照合'], ['rules', '会社ルール'], ['handoff', '引継ぎ'], ['data', 'データと安全性']];
   const st = { companies: [], company: null, data: null, review: null, month: '', tab: 'review', sel: null, user: '', pending: null, reconPending: null,
     filter: { status: 'unresolved', severity: '', basis: '', check: '', q: '', sort: 'severity', carried: true },
-    recon: { account: '', truth: 'statement', window: 3, show: 'issues' } };
+    recon: { kind: 'account', account: '', truth: 'statement', window: 3, show: 'issues' }, docPending: null, bsError: '' };
 
   // ---------- 保存 ----------
   const saveCompany = () => { st.company.updatedAt = now(); return S.saveCompany(st.company); };
@@ -1325,9 +1815,11 @@ table.entries td:first-child{white-space:nowrap}
     st.company = id ? await S.getCompany(id) : null;
     if (!st.company) { st.data = null; st.review = null; return; }
     st.data = await S.getData(id); st.review = await S.getReview(id);
+    // 前の版で保存したデータに、後から増えた項目を補う
+    st.company.opening = st.company.opening || { date: '', balances: [] }; st.data.docs = st.data.docs || {}; st.data.bs = st.data.bs || null;
     const ms = dataMonths(); const saved = await S.getSetting('month:' + id);
     st.month = saved && (ms.includes(saved) || !ms.length) ? saved : (ms[ms.length - 1] || '');
-    st.sel = null; st.pending = null; st.reconPending = null; st.recon.account = '';
+    st.sel = null; st.pending = null; st.reconPending = null; st.docPending = null; st.bsError = ''; st.recon.account = '';
     await S.setSetting('lastCompany', id);
   }
   async function reloadCompanies() { st.companies = await S.listCompanies(); }
@@ -1353,10 +1845,11 @@ table.entries td:first-child{white-space:nowrap}
     d.imports.push({ id, name: res.fileName, hash: res.hash, at: now(), encoding: res.encoding, rows: res.lines.length, from: res.stats.from, to: res.stats.to, months: res.stats.months, rejected: res.rejected.slice(0, 500), rejectedCount: res.rejected.length, warnings: res.warnings.slice(0, 200), unmapped: res.unmapped });
     d.changedAt = now();
   }
+  function commitBS(res) { st.data.bs = { name: res.fileName, hash: res.hash, at: now(), months: res.months, opening: res.opening, balances: res.balances, warnings: res.warnings, stats: res.stats }; st.data.changedAt = now(); }
   async function runReview() {
     if (!st.month) return toast('対象月を選んでください', true);
-    const run = KR.checks.runReview(st.company, st.data.lines, st.month, filesMap());
-    R.applyRun(st.review, st.month, run.findings, f => f.check !== 'RECON', now());
+    const run = KR.checks.runReview(st.company, st.data.lines, st.month, filesMap(), { bs: st.data.bs });
+    R.applyRun(st.review, st.month, run.findings, f => !['RECON', 'SALES', 'PAY'].includes(f.check), now());
     st.data.runs[st.month] = { at: now(), notes: run.notes, suppressed: run.suppressed, stats: run.stats, by: st.user };
     await saveReview(); await saveData();
     if (st.sel && !st.review.states[st.sel]) st.sel = null;
@@ -1367,6 +1860,7 @@ table.entries td:first-child{white-space:nowrap}
     if (await S.getCompany('sample') && !confirm('サンプルの会社がすでにあります。サンプルのデータと確認結果を最初の状態に戻しますか？')) return;
     await S.deleteCompany('sample'); await S.saveCompany(s.company); await reloadCompanies(); await selectCompany('sample');
     for (const j of s.journals) { const res = KR.csv.readJournal(j.text, j.name); res.encoding = 'UTF-8'; commitJournal(res); }
+    commitBS(KR.csv.readBS(s.bs.text, s.bs.name));
     st.month = s.month; await S.setSetting('month:sample', st.month); await saveData(); await runReview(); st.tab = 'review'; render();
   }
 
@@ -1392,6 +1886,21 @@ table.entries td:first-child{white-space:nowrap}
     toast('照合しました：一致 ' + rec.counts.match + '、差額あり ' + rec.counts.diff + '、片側のみ ' + rec.counts.single + '、要確認 ' + rec.counts.unsure);
   }
 
+  // ---------- 資料との照合（売上資料・給与資料） ----------
+  const docKey = () => st.recon.kind + '|' + st.month;
+  function docCompute(saved) {
+    const ctx = { company: st.company, month: st.month, fileName: saved.name, truth: saved.truth };
+    if (saved.kind === 'sales') { const res = KR.docs.matchSales(st.company, st.data.lines, saved.lines, st.month, { window: Number(saved.window) || 3, files: filesMap() }); return { res, findings: KR.docs.salesFindings(res, ctx) }; }
+    const res = KR.docs.matchPayroll(st.company, st.data.lines, saved.lines, st.month, { files: filesMap(), has: saved.has }); return { res, findings: KR.docs.payrollFindings(res, ctx) };
+  }
+  async function applyDoc(saved) {
+    const { res, findings } = docCompute(saved), check = saved.kind === 'sales' ? 'SALES' : 'PAY';
+    R.applyRun(st.review, st.month, findings, f => f.check === check, now());
+    await saveData(); await saveReview();
+    toast('照合しました：一致 ' + res.counts.match + '、差額あり ' + res.counts.diff + '、片側のみ ' + res.counts.single + '、要確認 ' + res.counts.unsure + (res.payCounts ? '、入金が見当たらない請求 ' + res.payCounts.overdue : ''));
+  }
+  function readDoc(text, name, encoding) { const res = st.recon.kind === 'sales' ? KR.csv.readInvoices(text, name) : KR.csv.readPayroll(text, name); res.encoding = encoding; res.docKind = st.recon.kind; return res; }
+
   // ---------- 部品 ----------
   const sevBadge = s => '<span class="badge sev-' + s + '">' + M.SEVERITY[s] + '</span>';
   const stBadge = (s, auto) => '<span class="badge st-' + s + '">' + M.STATUS[s] + (auto ? '（確認済みルール）' : '') + '</span>';
@@ -1404,8 +1913,9 @@ table.entries td:first-child{white-space:nowrap}
     }));
     return (label ? '<h4>' + esc(label) + '</h4>' : '') + h + '</tbody></table></div>';
   }
-  function statementTable(rows, file) {
+  function statementTable(rows, file, label) {
     if (!rows || !rows.length) return '';
+    if (label) return '<h4>' + esc(label) + '側（' + esc(file) + '）</h4><div class="tblwrap"><table class="entries"><thead><tr><th>日付</th><th>内容</th><th class="num">金額</th><th>元データ</th></tr></thead><tbody>' + rows.map(s => '<tr><td>' + esc(s.date) + '</td><td>' + esc(s.desc) + '</td><td class="num">' + Math.abs(s.amount).toLocaleString('ja-JP') + '</td><td class="src">' + s.row + '行目</td></tr>').join('') + '</tbody></table></div>';
     return '<h4>明細側（' + esc(file) + '）</h4><div class="tblwrap"><table class="entries"><thead><tr><th>日付</th><th>摘要</th><th class="num">出金</th><th class="num">入金</th><th class="num">残高</th><th>元データ</th></tr></thead><tbody>' +
       rows.map(s => '<tr><td>' + esc(s.date) + '</td><td>' + esc(s.desc) + '</td><td class="num">' + (s.amount < 0 ? (-s.amount).toLocaleString('ja-JP') : '') + '</td><td class="num">' + (s.amount > 0 ? s.amount.toLocaleString('ja-JP') : '') + '</td><td class="num">' + (s.balance == null ? '' : s.balance.toLocaleString('ja-JP')) + '</td><td class="src">' + s.row + '行目</td></tr>').join('') + '</tbody></table></div>';
   }
@@ -1463,7 +1973,7 @@ table.entries td:first-child{white-space:nowrap}
     if (it.gone) h += '<div class="notebox">最新のデータでの再実行では、この指摘は検出されませんでした（帳簿が修正された、またはデータ・ルールが変わった可能性があります）。記録は残しています。</div>';
     if (it.auto) h += '<div class="notebox">確認済みルール「' + esc(it.auto.reason) + '」（' + esc(it.auto.from) + '〜' + esc(it.auto.to) + '、登録：' + esc(it.auto.by || '') + '）に当たるため「問題なし」と表示しています。ルールは「会社ルール」で変更・削除できます。</div>';
     h += '<section><h4>指摘理由 <span class="fact">データから確認できる事実</span></h4><p>' + esc(f.reason) + '</p></section>';
-    h += '<section>' + entryTable(f.entries, f.entriesLabel || '対象の取引') + statementTable(f.statementRows, f.statementFile) + (f.comparison && f.comparison.entries.length ? entryTable(f.comparison.entries, '比較対象：' + f.comparison.label) : (f.comparison ? '<h4>比較対象：' + esc(f.comparison.label) + '</h4><p class="muted">該当する過去の仕訳はありません。</p>' : '')) + '</section>';
+    h += '<section>' + entryTable(f.entries, f.entriesLabel || '対象の取引') + statementTable(f.statementRows, f.statementFile, f.statementLabel) + (f.comparison && f.comparison.entries.length ? entryTable(f.comparison.entries, '比較対象：' + f.comparison.label) : (f.comparison ? '<h4>比較対象：' + esc(f.comparison.label) + '</h4><p class="muted">該当する過去の仕訳はありません。</p>' : '')) + '</section>';
     if (f.calc.length) h += '<section><h4>判定に使った条件・計算</h4>' + ul(f.calc) + '</section>';
     if (f.inference.length) h += '<section class="infer"><h4>推測 <span class="guess">データからは確定できません</span></h4>' + ul(f.inference) + '</section>';
     if (f.impact) h += '<section><h4>消費税への影響</h4><p>' + esc(f.impact) + '</p></section>';
@@ -1501,11 +2011,50 @@ table.entries td:first-child{white-space:nowrap}
     }
     h += '<h3>取込済みのデータ</h3>' + (d.imports.length ? '<div class="tblwrap"><table><thead><tr><th>ファイル</th><th>期間</th><th class="num">行数</th><th class="num">読めなかった行</th><th>文字コード</th><th>取込日時</th><th></th></tr></thead><tbody>' + d.imports.map(i => '<tr><td>' + esc(i.name) + '</td><td>' + esc(i.from) + ' 〜 ' + esc(i.to) + '</td><td class="num">' + d.lines.filter(l => l.src === i.id).length + '</td><td class="num">' + (i.rejectedCount ? '<button class="link" data-act="showRejected" data-id="' + i.id + '">' + i.rejectedCount + '行を見る</button>' : '0') + '</td><td>' + esc(i.encoding) + '</td><td>' + esc(i.at.slice(0, 16).replace('T', ' ')) + '</td><td><button data-act="delImport" data-id="' + i.id + '">削除</button></td></tr>').join('') + '</tbody></table></div><p class="muted">取込済みの月：' + esc(dataMonths().join('、')) + '</p>' : '<p class="muted">まだありません。</p>');
     if (st.shown) { const i = d.imports.find(x => x.id === st.shown); if (i) h += '<h3>' + esc(i.name) + ' の読めなかった行・注意</h3>' + rejectedBlock(i); }
+    h += '<h2 class="gap">月次推移（貸借対照表）CSVの取込（任意）</h2><p>freee の［月次推移］→［貸借対照表］のCSV（円単位、表示するタグは「なし」）を取り込むと、①仕訳帳の増減と試算表の残高が合っているか、②仮払金など仕訳帳に動きのない科目の残高、を確認できます。仕訳帳CSVと同じ時点で出力してください。</p><div class="drop"><input type="file" id="bsfile" accept=".csv,.txt,text/csv"></div>';
+    if (st.bsError) h += '<div class="warnbox"><b>取り込めません。</b>' + esc(st.bsError) + '</div>';
+    if (d.bs) h += '<table class="kv"><tr><th>ファイル</th><td>' + esc(d.bs.name) + '</td></tr><tr><th>期間</th><td>' + esc(d.bs.stats.from) + ' 〜 ' + esc(d.bs.stats.to) + '（期首残高つき）</td></tr><tr><th>読めた科目</th><td>' + d.bs.stats.accounts + '科目' + (d.bs.stats.tagged ? '（タグ別の内訳行は使わず、科目の合計行だけを読みました）' : '') + '</td></tr><tr><th>取込日時</th><td>' + esc(d.bs.at.slice(0, 16).replace('T', ' ')) + '　<button data-act="delBS">削除</button></td></tr></table>' + (d.bs.warnings.length ? '<div class="notebox">' + ul(d.bs.warnings.map(w => w.row + '行目：' + w.text)) + '</div>' : '');
     return h;
   }
 
   // ---------- 画面：明細との照合 ----------
   function viewRecon() {
+    const kinds = [['account', '口座の明細（銀行・カード・現金出納帳）'], ['sales', '売上資料（請求一覧）'], ['pay', '給与資料']];
+    return '<div class="subtabs">' + kinds.map(([k, l]) => '<button data-act="reconKind" data-k="' + k + '" class="' + (st.recon.kind === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' + (st.recon.kind === 'account' ? viewReconAccount() : viewDocs());
+  }
+  function viewDocs() {
+    const sales = st.recon.kind === 'sales', saved = st.data.docs[docKey()], p = st.docPending && st.docPending.docKind === st.recon.kind ? st.docPending : null, amt = n => n.toLocaleString('ja-JP');
+    let h = '<h2>' + (sales ? '売上資料との照合' : '給与資料との照合') + '（' + esc(st.month) + '）</h2><p>' + (sales
+      ? '請求一覧のCSV（請求日・取引先・請求金額の列が必須。請求書番号・入金期日・件名は任意）を、帳簿の売上と入金に突き合わせます。①対象月の請求が売上に計上されているか、②対象月末までの請求に入金があるか、を請求書単位で確認します。請求金額は帳簿の売上と同じ基準（税込経理なら税込）にしてください。'
+      : '給与一覧のCSV（支給日・総支給額の列が必須。区分〔役員／従業員〕・控除合計・差引支給額は任意）を、帳簿の給与の仕訳と月の合計どうしで比べます。支給日が対象月の行を使います。') + '</p>'
+      + '<div class="filters"><label>正とする資料 <select data-r="truth">' + opt('statement', sales ? '請求一覧' : '給与資料', st.recon.truth) + opt('book', '帳簿', st.recon.truth) + '</select></label>' + (sales ? '<label>日付のずれの許容 <select data-r="window">' + [0, 1, 2, 3, 5, 7].map(n => opt(n, n + '日', st.recon.window)).join('') + '</select></label>' : '') + '</div>'
+      + '<div class="drop"><input type="file" id="dfile" accept=".csv,.txt,text/csv">' + (st.company.id === 'sample' ? ' <button data-act="sampleDoc">サンプルの' + (sales ? '請求一覧' : '給与一覧') + 'で試す</button>' : '') + '</div>';
+    if (p) {
+      h += '<div class="preview"><h3>取込前の確認：' + esc(p.fileName) + '</h3>';
+      if (p.fatal) h += '<div class="warnbox"><b>取り込めません。</b>' + esc(p.fatal) + '</div><div class="rowbtns"><button data-act="cancelDoc">閉じる</button></div>';
+      else {
+        const inM = p.lines.filter(l => l.date.slice(0, 7) === st.month).length;
+        h += '<table class="kv"><tr><th>文字コード</th><td>' + esc(p.encoding) + '</td></tr><tr><th>読めた行</th><td>' + p.stats.rows + '行（' + esc(p.stats.from || '') + ' 〜 ' + esc(p.stats.to || '') + '）　うち対象月 ' + inM + '行</td></tr><tr><th>読み取った列</th><td>' + esc(p.columns.map(c => c.header).join('、')) + '</td></tr><tr><th>使わなかった列</th><td>' + (p.unmapped.length ? esc(p.unmapped.join('、')) : 'なし') + '</td></tr></table>'
+          + (!sales && !(p.has.deduct && p.has.net) ? '<div class="notebox">控除合計・差引支給額の列がないため、その比較は行いません。</div>' : '') + rejectedBlock(p) + '<div class="rowbtns"><button class="primary" data-act="commitDoc"' + (p.stats.rows ? '' : ' disabled') + '>帳簿と照合する</button><button data-act="cancelDoc">やめる</button></div>';
+      }
+      h += '</div>';
+    }
+    if (saved) {
+      const { res } = docCompute(saved), c = res.counts, cat = k => '<span class="badge rc">' + RC.CATEGORY[k] + '</span>';
+      h += '<h3>照合結果：' + esc(saved.name) + '</h3><div class="summary"><div class="card"><div class="n">' + c.match + '</div><div>一致</div></div><div class="card"><div class="n">' + c.diff + '</div><div>差額あり</div></div><div class="card"><div class="n">' + c.single + '</div><div>片側のみ</div></div><div class="card"><div class="n">' + c.unsure + '</div><div>同一取引か要確認</div></div>' + (sales ? '<div class="card' + (res.payCounts.overdue ? ' alert' : '') + '"><div class="n">' + res.payCounts.overdue + '</div><div>入金が見当たらない請求</div></div>' : '')
+        + '<div class="runbox"><div class="muted">正とする資料：' + (saved.truth === 'statement' ? (sales ? '請求一覧' : '給与資料') : '帳簿') + '　照合日時：' + esc(saved.at.slice(0, 16).replace('T', ' ')) + '</div><button data-act="rerunDoc">この設定で照合し直す</button> <button data-act="delDoc">照合を削除</button></div></div>';
+      if (sales) {
+        h += '<h4>① 売上の計上（対象月の請求 ' + res.stats.invoices + '件 ⇔ 帳簿の売上 ' + res.stats.book + '件）</h4><div class="tblwrap"><table class="recon"><thead><tr><th>区分</th><th>請求一覧</th><th>帳簿の売上</th><th>内容</th></tr></thead><tbody>' + res.results.map(r => '<tr class="rc-' + r.category + '"><td>' + cat(r.category) + '</td><td>' + (r.invoices.map(s => esc(s.date) + ' ' + esc(s.partner) + ' ' + esc(s.no) + ' <b>' + amt(s.amount) + '</b>').join('<br>') || '<span class="muted">なし</span>') + '</td><td>' + (r.book.map(b => esc(b.date) + ' ' + esc(b.partner) + ' ' + esc(b.desc) + ' <b>' + amt(b.amount) + '</b>').join('<br>') || '<span class="muted">なし</span>') + '</td><td>' + esc(r.note) + (r.taxGuess ? '<br><span class="guess">推測</span> 税込・税抜の違いの可能性' : '') + '</td></tr>').join('') + '</tbody></table></div>';
+        const pl = { paid: '入金あり', paidDiff: '入金あり（差額）', overdue: '入金が見当たらない', notDue: '期日前' };
+        h += '<h4>② 入金（資料の請求 ' + res.pay.length + '件。対象月末 ' + esc(U.monthEnd(st.month)) + ' までの帳簿の入金と照合）</h4><div class="tblwrap"><table class="recon"><thead><tr><th>状況</th><th>請求</th><th>入金期日</th><th>内容</th></tr></thead><tbody>' + res.pay.map(x => '<tr class="' + (x.status === 'paid' || x.status === 'notDue' ? 'rc-match' : '') + '"><td><span class="badge ' + (x.status === 'overdue' ? 'sev-high' : 'rc') + '">' + pl[x.status] + '</span></td><td>' + esc(x.inv.date) + ' ' + esc(x.inv.partner) + ' ' + esc(x.inv.no) + ' <b>' + amt(x.inv.amount) + '</b></td><td>' + esc(x.inv.due || '記載なし') + '</td><td>' + esc(x.note) + '</td></tr>').join('') + '</tbody></table></div><p class="muted">入金は、同じ取引先の「口座の入金で、相手が売掛金・未収入金・売上」の仕訳から探します（同額、複数請求の合算、' + res.options.feeMax.toLocaleString('ja-JP') + '円以内の差額）。入金期日の記載がない請求は、請求から' + res.options.graceDays + '日を過ぎたものだけを指摘します。</p>';
+      } else {
+        h += '<div class="tblwrap"><table class="recon"><thead><tr><th>区分</th><th>項目</th><th class="num">給与資料</th><th class="num">帳簿</th><th class="num">差</th><th>帳簿側の集計方法</th></tr></thead><tbody>' + res.items.map(i => '<tr class="rc-' + i.category + '"><td>' + cat(i.category) + '</td><td>' + esc(i.label) + '</td><td class="num">' + amt(i.doc) + '</td><td class="num">' + amt(i.book) + '</td><td class="num"><b>' + amt(i.diff) + '</b></td><td>' + esc(i.hint) + '</td></tr>').join('') + '</tbody></table></div><p class="muted">給与資料 ' + res.stats.people + '人分、帳簿の給与の仕訳 ' + res.stats.entries + '件。比較は月の合計どうしです（人ごとの照合、預り金の納付、社会保険料の会社負担分は対象外）。</p>';
+      }
+      h += '<p class="muted">一致以外は、レビュー一覧（チェック：' + (sales ? '売上資料との照合' : '給与資料との照合') + '）で対応状況を記録できます。</p>' + rejectedBlock(saved);
+    }
+    return h;
+  }
+  function viewReconAccount() {
     const accs = fundAccounts(); if (!st.recon.account || !accs.includes(st.recon.account)) st.recon.account = accs[0] || '';
     if (!accs.length) return '<div class="empty"><h2>照合できる口座がありません</h2><p>仕訳帳CSVを取り込むと、現金・預金・カードなどの口座科目を選べます。口座として扱う科目は「会社ルール」で変更できます。</p></div>';
     const saved = st.data.statements[reconKey()], p = st.reconPending;
@@ -1530,25 +2079,26 @@ table.entries td:first-child{white-space:nowrap}
         + '<div class="filters"><select data-r="show">' + opt('issues', '一致以外を表示', show) + opt('all', 'すべて表示', show) + '</select></div><div class="tblwrap"><table class="recon"><thead><tr><th>区分</th><th>明細（日付・摘要・金額）</th><th>帳簿（日付・相手科目・取引先・金額）</th><th>内容</th></tr></thead><tbody>'
         + rec.results.filter(r => show === 'all' || r.category !== 'match').map(r => '<tr class="rc-' + r.category + '"><td><span class="badge rc">' + RC.CATEGORY[r.category] + '</span></td><td>' + (r.statement.map(s => esc(s.date) + ' ' + esc(s.desc) + ' <b>' + (s.amount > 0 ? '+' : '−') + Math.abs(s.amount).toLocaleString('ja-JP') + '</b>').join('<br>') || '<span class="muted">なし</span>') + '</td><td>' + (r.book.map(b => esc(b.date) + ' ' + esc(b.counter) + ' ' + esc(b.partner) + ' <b>' + (b.amount > 0 ? '+' : '−') + Math.abs(b.amount).toLocaleString('ja-JP') + '</b>').join('<br>') || '<span class="muted">なし</span>') + '</td><td>' + esc(r.note) + (r.feeGuess ? '<br><span class="guess">推測</span> 振込手数料の控除の可能性' : '') + '</td></tr>').join('') + '</tbody></table></div><p class="muted">一致以外の ' + (c.diff + c.single + c.unsure) + '件は、レビュー一覧（チェック：明細との照合）で対応状況を記録できます。</p>' + rejectedBlock(saved);
     }
-    return h + '<p class="muted">この版で照合できるのは、口座の明細（銀行・カード・現金出納帳）と帳簿です。売上資料・請求書と売上・入金、給与資料と給与・預り金の照合は未対応です。</p>';
+    return h;
   }
 
   // ---------- 画面：会社ルール ----------
   function viewRules() {
     const c = st.company, t = M.thresholds(c), accs = [...U.countBy(st.data.lines.flatMap(l => [l.dAcc, l.cAcc]).filter(Boolean), a => a)].sort((a, b) => b[1] - a[1]);
     const inp = (path, val, type, extra) => '<input data-c="' + path + '" type="' + (type || 'text') + '" value="' + esc(val == null ? '' : val) + '"' + (extra || '') + '>';
-    const kinds = { fund: '口座（現金・預金・カード）', bs: '貸借科目', pl: '損益科目' };
+    const kinds = { fund: '口座（現金・預金・カード）', bs: '貸借科目', rev: '損益：収益', cogs: '損益：売上原価', exp: '損益：経費' }, autoName = a => { const k = M.accountKind({ accountKinds: {} }, a); return k === 'pl' ? kinds[M.plClass({ accountKinds: {} }, a)] : kinds[k]; };
     const delBtn = (list, id) => '<button data-act="delRule" data-list="' + list + '" data-id="' + esc(id) + '">削除</button>';
     let h = '<h2>会社ルール：' + esc(c.name) + '</h2><p class="muted">ここで登録した内容は、この会社のレビューにだけ使います。変更したら「レビューを実行」で再判定してください。</p>';
     h += '<h3>基本情報</h3><div class="grid"><label>会社名' + inp('name', c.name) + '</label><label>区分<select data-c="type">' + opt('corp', '法人', c.type) + opt('individual', '個人事業主', c.type) + '</select></label><label>決算月<select data-c="fiscalEndMonth" data-num="1">' + Array.from({ length: 12 }, (_, i) => opt(i + 1, (i + 1) + '月', c.fiscalEndMonth)).join('') + '</select></label><label class="span2">事業内容' + inp('business', c.business) + '</label></div>';
     h += '<h3>消費税の処理方針</h3><div class="grid"><label>課税の状況<select data-c="tax.status">' + Object.entries(M.TAX_STATUS).map(([v, l]) => opt(v, l, c.tax.status)).join('') + '</select></label><label>経理方式<select data-c="tax.accounting">' + opt('unknown', '未登録', c.tax.accounting) + opt('inclusive', '税込経理', c.tax.accounting) + opt('exclusive', '税抜経理', c.tax.accounting) + '</select></label><label class="span2">補足（課税期間、届出の状況など）' + inp('tax.note', c.tax.note) + '</label></div><p class="muted">課税の状況は、税区分の違いが納付税額に影響するかの表示と、経過措置の控除割合のチェックを行うかどうかに使います。未登録のときは影響を判定しません。</p>';
-    h += '<h3>レビューの重要性基準</h3><div class="grid"><label>重要度「高」とする金額（円以上）' + inp('thresholds.high', t.high, 'number', ' data-num="1"') + '</label><label>重要度「中」とする金額（円以上）' + inp('thresholds.mid', t.mid, 'number', ' data-num="1"') + '</label><label>重複候補の対象とする最小金額' + inp('thresholds.min', t.min, 'number', ' data-num="1"') + '</label><label>重複とみる日付の差（日以内）' + inp('thresholds.dateWindow', t.dateWindow, 'number', ' data-num="1"') + '</label></div>';
+    h += '<h3>レビューの重要性基準</h3><div class="grid"><label>重要度「高」とする金額（円以上）' + inp('thresholds.high', t.high, 'number', ' data-num="1"') + '</label><label>重要度「中」とする金額（円以上）' + inp('thresholds.mid', t.mid, 'number', ' data-num="1"') + '</label><label>重複候補の対象とする最小金額' + inp('thresholds.min', t.min, 'number', ' data-num="1"') + '</label><label>重複とみる日付の差（日以内）' + inp('thresholds.dateWindow', t.dateWindow, 'number', ' data-num="1"') + '</label><label>滞留とみる期間（か月以上）' + inp('thresholds.staleMonths', t.staleMonths, 'number', ' data-num="1"') + '</label></div>';
     h += '<h3>現金の期首残高</h3><div class="grid"><label>基準日（この日の開始時点）' + inp('cashOpening.date', c.cashOpening.date, 'date') + '</label><label>残高（円）' + inp('cashOpening.amount', c.cashOpening.amount, 'number', ' data-num="1"') + '</label></div><p class="muted">基準日から対象月までの仕訳がすべて取り込まれているときだけ、現金残高のマイナスを判定します。未登録のときは「資料不足による確認依頼」として示します。</p>';
+    h += '<h3>取込開始時点の残高（債権債務・仮勘定）</h3><div class="grid"><label>基準日（取り込んだ仕訳の最初の月の初日）' + inp('opening.date', c.opening.date, 'date') + '</label></div><div class="tblwrap"><table><thead><tr><th>勘定科目</th><th>取引先（科目全体なら空欄）</th><th class="num">残高（円）</th><th></th></tr></thead><tbody>' + c.opening.balances.map(r => '<tr><td>' + esc(r.account) + '</td><td>' + esc(r.partner) + '</td><td class="num">' + Number(r.amount).toLocaleString('ja-JP') + '</td><td><button data-act="delOpening" data-id="' + esc(r.id) + '">削除</button></td></tr>').join('') + '<tr><td><input id="opAccount" placeholder="売掛金"></td><td><input id="opPartner"></td><td><input id="opAmount" type="number"></td><td><button data-act="addOpening">追加</button></td></tr></tbody></table></div><p class="muted">売掛金・買掛金・未払金・仮払金・立替金などの滞留とマイナス残高の判定に使います。取引先別に登録した科目は、登録のない取引先を0円とみなします。未登録でも滞留の候補は出ますが、月末残高は確定せず、マイナス残高は判定しません。科目全体の残高は、月次推移（貸借対照表）のCSVからも読みます。</p>';
     h += '<h3>取引先ごとの通常の勘定科目・税区分</h3><div class="tblwrap"><table><thead><tr><th>取引先</th><th>通常の勘定科目（複数は「、」区切り）</th><th>通常の税区分（任意）</th><th>メモ</th><th></th></tr></thead><tbody>' + c.partnerRules.map(r => '<tr><td>' + esc(r.partner) + '</td><td>' + esc(r.account) + '</td><td>' + esc(r.tax) + '</td><td>' + esc(r.note) + '</td><td>' + delBtn('partnerRules', r.id) + '</td></tr>').join('') + '<tr><td><input id="prPartner"></td><td><input id="prAccount"></td><td><input id="prTax"></td><td><input id="prNote"></td><td><button data-act="addPartnerRule">追加</button></td></tr></tbody></table></div>';
     h += '<h3>毎月発生する取引と金額の許容範囲</h3><div class="tblwrap"><table><thead><tr><th>名前</th><th>勘定科目（必須）</th><th>取引先</th><th>摘要に含む語句</th><th class="num">金額</th><th class="num">許容（±%）</th><th>メモ</th><th></th></tr></thead><tbody>' + c.recurring.map(r => '<tr><td>' + esc(r.name) + '</td><td>' + esc(r.account) + '</td><td>' + esc(r.partner) + '</td><td>' + esc(r.keyword) + '</td><td class="num">' + (r.amount ? Number(r.amount).toLocaleString('ja-JP') : '') + '</td><td class="num">' + esc(r.tolerancePct == null ? '' : r.tolerancePct) + '</td><td>' + esc(r.note) + '</td><td>' + delBtn('recurring', r.id) + '</td></tr>').join('') + '<tr><td><input id="rcName"></td><td><input id="rcAccount"></td><td><input id="rcPartner"></td><td><input id="rcKeyword"></td><td><input id="rcAmount" type="number"></td><td><input id="rcTol" type="number" value="0"></td><td><input id="rcNote"></td><td><button data-act="addRecurring">追加</button></td></tr></tbody></table></div><p class="muted">金額を空欄にすると、計上の有無だけを確認します。</p>';
     h += '<h3>確認済みルール（過去に「問題なし」とした条件）</h3>' + (c.exceptions.length ? '<div class="tblwrap"><table><thead><tr><th>チェック</th><th>取引先</th><th>勘定科目</th><th>語句</th><th>金額</th><th>期間</th><th>理由</th><th>登録</th><th></th></tr></thead><tbody>' + c.exceptions.map(e => '<tr><td>' + M.CHECKS[e.check] + '</td><td>' + esc(e.partner) + '</td><td>' + esc(e.account) + '</td><td>' + esc(e.keyword) + '</td><td>' + esc((e.amountMin || '') + (e.amountMin || e.amountMax ? '〜' : '') + (e.amountMax || '')) + '</td><td>' + esc(e.from) + '〜' + esc(e.to) + '</td><td>' + esc(e.reason) + '</td><td>' + esc(e.by) + ' ' + esc((e.at || '').slice(0, 10)) + '</td><td>' + delBtn('exceptions', e.id) + '</td></tr>').join('') + '</tbody></table></div>' : '<p class="muted">まだありません。レビュー一覧の詳細で「問題なし」としたあと、条件と期間を指定して登録できます。</p>');
     h += '<h3>特有の取引・例外処理のメモ</h3><textarea data-c="notes" rows="3">' + esc(c.notes) + '</textarea><p class="muted">判定には使いません。引継ぎの出力に載せます。</p>';
-    h += '<h3>勘定科目の種類</h3><p class="muted">仕訳帳CSVには科目の区分がないため、名前から推定しています。違うものは変更してください（口座どうしの仕訳は振替として扱い、重複候補にしません）。</p>' + (accs.length ? '<div class="tblwrap small"><table><thead><tr><th>勘定科目</th><th class="num">行数</th><th>種類</th></tr></thead><tbody>' + accs.map(([a, n]) => { const auto = M.accountKind({ accountKinds: {} }, a), cur = c.accountKinds[a] || ''; return '<tr><td>' + esc(a) + '</td><td class="num">' + n + '</td><td><select data-kind="' + esc(a) + '">' + opt('', '自動（' + kinds[auto] + '）', cur) + Object.entries(kinds).map(([v, l]) => opt(v, l, cur)).join('') + '</select></td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="muted">仕訳帳CSVを取り込むと表示されます。</p>');
+    h += '<h3>勘定科目の種類</h3><p class="muted">仕訳帳CSVには科目の区分がないため、名前から推定しています。違うものは変更してください（口座どうしの仕訳は振替として扱い、重複候補にしません）。</p>' + (accs.length ? '<div class="tblwrap small"><table><thead><tr><th>勘定科目</th><th class="num">行数</th><th>種類</th></tr></thead><tbody>' + accs.map(([a, n]) => { const cur = c.accountKinds[a] || ''; return '<tr><td>' + esc(a) + '</td><td class="num">' + n + '</td><td><select data-kind="' + esc(a) + '">' + opt('', '自動（' + autoName(a) + '）', cur) + Object.entries(kinds).map(([v, l]) => opt(v, l, cur)).join('') + '</select></td></tr>'; }).join('') + '</tbody></table></div>' : '<p class="muted">仕訳帳CSVを取り込むと表示されます。</p>');
     return h;
   }
 
@@ -1563,8 +2113,8 @@ table.entries td:first-child{white-space:nowrap}
   function viewData() {
     const d = st.data;
     return '<h2>データと安全性</h2><h3>保存先と外部送信</h3><ul><li>取り込んだCSV・会社ルール・確認結果は、<b>このパソコンのこのブラウザの中（IndexedDB「kicho-review」）だけ</b>に保存します。</li><li>このアプリは外部と通信しません（配布ファイルは通信を禁止する設定にしてあります）。AIサービスへの送信もしていません。</li><li>freee の帳簿は変更しません（CSVを読むだけです）。</li><li>指摘・質問文案は、取り込んだデータと決まった手順から作っています。元データにない取引・金額は作りません。</li><li>ブラウザの閲覧データを消去すると、保存内容も消えます。下のバックアップを保管してください。別のパソコン・ブラウザとは共有されません。</li></ul>'
-      + '<h3>この会社のデータ</h3><p>' + esc(st.company.name) + '：仕訳 ' + d.lines.length + '行、照合 ' + Object.keys(d.statements).length + '件、確認事項の記録 ' + Object.keys(st.review.states).length + '件</p><div class="rowbtns"><button data-act="backup">この会社のバックアップを保存（JSON）</button><label class="filebtn">バックアップから復元<input type="file" id="restore" accept=".json,application/json"></label><button class="danger" data-act="delCompany">この会社のデータをすべて削除</button><button class="danger" data-act="delAll">全会社のデータを削除</button></div><p class="muted">バックアップには顧客の仕訳データが含まれます。保管場所に注意してください。</p>'
-      + '<h3>この版でできること・できないこと</h3><table class="kv"><tr><th>できること</th><td>仕訳帳CSVの取込と検証／重複候補／勘定科目・税区分の不一致（会社ルール・過去傾向）／定期取引の計上漏れ／通常と異なる金額／摘要・取引先の不足／経過措置の控除割合と取引日／現金残高のマイナス／口座明細との照合／対応状況・メモ・履歴の保存／確認済みルール／翌月への繰越／引継ぎの出力</td></tr><tr><th>未対応</th><td>freee API・ブラウザ拡張による取込（CSVのみ）／登録経路（自動登録ルール等）の取得／freee 画面へのリンク／売上資料・請求書・給与資料との照合／売掛金・買掛金などの滞留、期首・期末残高の整合性／前月比・前年同月比、売上区分別の変動／AIによる摘要の解釈・文案作成（質問文案は定型文）／複数人での同時利用・共有</td></tr></table>';
+      + '<h3>この会社のデータ</h3><p>' + esc(st.company.name) + '：仕訳 ' + d.lines.length + '行、照合 ' + (Object.keys(d.statements).length + Object.keys(d.docs).length) + '件、確認事項の記録 ' + Object.keys(st.review.states).length + '件</p><div class="rowbtns"><button data-act="backup">この会社のバックアップを保存（JSON）</button><label class="filebtn">バックアップから復元<input type="file" id="restore" accept=".json,application/json"></label><button class="danger" data-act="delCompany">この会社のデータをすべて削除</button><button class="danger" data-act="delAll">全会社のデータを削除</button></div><p class="muted">バックアップには顧客の仕訳データが含まれます。保管場所に注意してください。</p>'
+      + '<h3>この版でできること・できないこと</h3><table class="kv"><tr><th>できること</th><td>仕訳帳CSVの取込と検証／重複候補／勘定科目・税区分の不一致（会社ルール・過去傾向）／定期取引の計上漏れ／通常と異なる金額／摘要・取引先の不足／経過措置の控除割合と取引日／現金残高のマイナス／債権債務・仮勘定の滞留とマイナス残高／役員貸付金・借入金の増減／試算表との残高の整合性／月次の変動・売上の内訳の変動／口座明細・売上資料（請求一覧）・給与資料との照合／対応状況・メモ・履歴の保存／確認済みルール／翌月への繰越／引継ぎの出力</td></tr><tr><th>未対応</th><td>freee API・ブラウザ拡張による取込（CSVのみ）／登録経路（自動登録ルール等）の取得／freee 画面へのリンク／請求書単位の債権債務の年齢（請求一覧を取り込んだ月の入金確認のみ）／給与の人ごとの照合・預り金の納付の確認／損益計算書の試算表との照合／AIによる摘要の解釈・文案作成（質問文案は定型文）／複数人での同時利用・共有</td></tr></table>';
   }
 
   // ---------- 全体 ----------
@@ -1612,6 +2162,15 @@ table.entries td:first-child{white-space:nowrap}
     copy: el => copyText($('#' + el.dataset.from).textContent),
     addPartnerRule: async () => { if (!val('prPartner') || (!val('prAccount') && !val('prTax'))) return toast('取引先と、勘定科目または税区分を入力してください', true); st.company.partnerRules.push({ id: rid(), partner: val('prPartner'), account: val('prAccount'), tax: val('prTax'), note: val('prNote') }); await saveCompany(); },
     addRecurring: async () => { if (!val('rcAccount')) return toast('勘定科目を入力してください', true); st.company.recurring.push({ id: rid(), name: val('rcName') || val('rcAccount'), account: val('rcAccount'), partner: val('rcPartner'), keyword: val('rcKeyword'), amount: Number(val('rcAmount')) || 0, tolerancePct: Number(val('rcTol')) || 0, note: val('rcNote') }); await saveCompany(); },
+    addOpening: async () => { if (!val('opAccount') || val('opAmount') === '') return toast('勘定科目と残高を入力してください', true); st.company.opening.balances.push({ id: rid(), account: val('opAccount'), partner: val('opPartner'), amount: Number(val('opAmount')) }); await saveCompany(); },
+    delOpening: async el => { st.company.opening.balances = st.company.opening.balances.filter(r => r.id !== el.dataset.id); await saveCompany(); },
+    delBS: async () => { st.data.bs = null; st.data.changedAt = now(); await saveData(); },
+    reconKind: el => { st.recon.kind = el.dataset.k; st.docPending = null; },
+    sampleDoc: () => { const s = KR.sample.build(), f = st.recon.kind === 'sales' ? s.invoices : s.payroll; st.docPending = readDoc(f.text, f.name, 'UTF-8'); },
+    commitDoc: async () => { const p = st.docPending, saved = { kind: p.docKind, name: p.fileName, hash: p.hash, at: now(), lines: p.lines, has: p.has || null, rejected: p.rejected.slice(0, 500), rejectedCount: p.rejected.length, warnings: p.warnings, truth: st.recon.truth, window: st.recon.window }; st.data.docs[docKey()] = saved; st.docPending = null; await applyDoc(saved); },
+    cancelDoc: () => { st.docPending = null; },
+    rerunDoc: async () => { const s = st.data.docs[docKey()]; s.truth = st.recon.truth; s.window = st.recon.window; s.at = now(); await applyDoc(s); },
+    delDoc: async () => { const s = st.data.docs[docKey()]; if (!confirm('この照合を削除しますか？（対応を記録した確認事項は「検出されず」として残ります）')) return; delete st.data.docs[docKey()]; const check = s.kind === 'sales' ? 'SALES' : 'PAY'; R.applyRun(st.review, st.month, [], f => f.check === check, now()); await saveData(); await saveReview(); },
     delRule: async el => { const l = el.dataset.list; st.company[l] = st.company[l].filter(r => r.id !== el.dataset.id); await saveCompany(); },
     sampleStatement: () => { const s = KR.sample.build().statement; st.recon.account = s.account; const res = KR.csv.readStatement(s.text, s.name); res.encoding = 'UTF-8'; st.reconPending = res; },
     commitStatement: () => commitStatement(st.reconPending),
@@ -1636,10 +2195,12 @@ table.entries td:first-child{white-space:nowrap}
     const el = e.target;
     try {
       if (el.id === 'company') { await selectCompany(el.value); }
-      else if (el.id === 'month') { st.month = el.value; st.sel = null; st.reconPending = null; await S.setSetting('month:' + st.company.id, st.month); }
+      else if (el.id === 'month') { st.month = el.value; st.sel = null; st.reconPending = null; st.docPending = null; await S.setSetting('month:' + st.company.id, st.month); }
       else if (el.id === 'user') { st.user = el.value.trim(); await S.setSetting('user', st.user); return; }
       else if (el.id === 'jfile') { if (el.files[0]) await previewJournal(el.files[0]); return; }
       else if (el.id === 'sfile') { if (el.files[0]) { const d = await readFile(el.files[0]); const res = KR.csv.readStatement(d.text, el.files[0].name); res.encoding = d.encoding; st.reconPending = res; } }
+      else if (el.id === 'dfile') { if (el.files[0]) { const d = await readFile(el.files[0]); st.docPending = readDoc(d.text, el.files[0].name, d.encoding); } }
+      else if (el.id === 'bsfile') { if (el.files[0]) { const d = await readFile(el.files[0]), res = KR.csv.readBS(d.text, el.files[0].name); st.bsError = res.fatal || ''; if (!res.fatal) { commitBS(res); await saveData(); toast('月次推移（貸借対照表）を取り込みました：' + res.stats.accounts + '科目。レビューを再実行してください'); } } }
       else if (el.id === 'restore') { if (el.files[0]) { const id = await S.importBackup(JSON.parse(await el.files[0].text())); await reloadCompanies(); await selectCompany(id); toast('復元しました'); } }
       else if (el.dataset.f) { st.filter[el.dataset.f] = el.type === 'checkbox' ? el.checked : el.value; if (el.dataset.f === 'q') { render(); const q = $('[data-f="q"]'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); return; } }
       else if (el.dataset.r) { st.recon[el.dataset.r] = el.dataset.r === 'window' ? Number(el.value) : el.value; if (el.dataset.r === 'account') st.reconPending = null; }

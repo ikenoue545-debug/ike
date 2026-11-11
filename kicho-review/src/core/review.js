@@ -13,10 +13,12 @@
     for (const f of findings) {
       seen.add(f.key);
       const st = review.states[f.key] || (review.states[f.key] = { status: 'open', memo: '', reviewer: '', history: [], firstSeen: now });
+      // 月をまたいで続く事項（滞留など）：解決済みにしたものが後の月にも検出されたら、未確認に戻して記録を残す
+      if (st.month && st.month < f.month && !M.UNRESOLVED.includes(st.status)) { st.history.push({ at: now, by: '（自動）', from: st.status, to: 'open', memo: f.month + ' のレビューでも検出されたため、未確認に戻しました' }); st.status = 'open'; }
       st.finding = f; st.month = f.month; st.gone = false; st.lastSeen = now;
     }
     for (const [k, st] of Object.entries(review.states)) {
-      if (seen.has(k) || st.month !== month || !inScope(st.finding)) continue;
+      if (seen.has(k) || !inScope(st.finding) || !(st.month === month || (st.finding.rolling && st.month < month))) continue;
       if (st.status === 'open' && !st.history.length && !st.memo) delete review.states[k];   // 一度も触っていないものは残さない
       else st.gone = true;
     }
@@ -101,7 +103,7 @@
       L.push('- 状況：' + M.STATUS[it.status] + (it.carried ? '（' + it.month + ' から繰越）' : '') + (it.gone ? '（再実行では検出されず）' : '') + '　／　根拠の種類：' + M.BASIS[f.basis] + '　／　チェック：' + M.CHECKS[f.check]);
       L.push('- 指摘理由（データから確認できる事実）：' + f.reason);
       (f.entries || []).forEach(e => e.rows.forEach(r => L.push('  - ' + e.date + (e.slip ? ' 伝票' + e.slip : '') + ' ' + rowText(r) + (r.partner ? ' ' + r.partner : '') + (r.desc ? ' 「' + r.desc + '」' : '') + (r.file ? '（' + r.file + ' ' + r.row + '行目）' : ''))));
-      (f.statementRows || []).forEach(s => L.push('  - 明細 ' + s.date + ' ' + (s.amount > 0 ? '入金 ' : '出金 ') + U.yen(Math.abs(s.amount)) + ' ' + (s.desc || '') + '（' + (f.statementFile || '') + ' ' + s.row + '行目）'));
+      (f.statementRows || []).forEach(s => L.push('  - ' + (f.statementLabel || '明細') + ' ' + s.date + ' ' + (f.statementLabel ? '' : (s.amount > 0 ? '入金 ' : '出金 ')) + U.yen(Math.abs(s.amount)) + ' ' + (s.desc || '') + '（' + (f.statementFile || '') + ' ' + s.row + '行目）'));
       if (f.calc && f.calc.length) L.push('- 計算・比較：' + f.calc.join(' ／ '));
       if (f.inference && f.inference.length) L.push('- 推測（未確定）：' + f.inference.join(' '));
       if (f.impact) L.push('- 消費税への影響：' + f.impact);

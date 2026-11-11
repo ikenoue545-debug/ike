@@ -1,7 +1,7 @@
 // 判定エンジン（src/core）を Node に読み込む。サンプルデータを実データと同じ取込処理に通す
 'use strict';
 const path = require('path');
-for (const f of ['util', 'csv', 'model', 'checks', 'reconcile', 'review', 'sample']) require(path.join(__dirname, '..', 'src', 'core', f + '.js'));
+for (const f of ['util', 'csv', 'model', 'checks', 'balance', 'reconcile', 'docs', 'review', 'sample']) require(path.join(__dirname, '..', 'src', 'core', f + '.js'));
 const KR = globalThis.KR;
 // 画面の取込処理（app.js の importJournal）と同じ：同じ月の行は新しいファイルで置き換える
 function importJournals(journals) {
@@ -16,6 +16,7 @@ function importJournals(journals) {
 }
 function sampleRun() {
   const s = KR.sample.build(), imp = importJournals(s.journals);
-  return Object.assign({ sample: s, run: KR.checks.runReview(s.company, imp.lines, s.month, imp.files) }, imp);
+  const bs = KR.csv.readBS(s.bs.text, s.bs.name);
+  return Object.assign({ sample: s, bs, run: KR.checks.runReview(s.company, imp.lines, s.month, imp.files, { bs }) }, imp);
 }
 module.exports = { KR, importJournals, sampleRun };

@@ -1,0 +1,12 @@
+{
+  "name": "kicho-review",
+  "version": "0.1.0",
+  "private": true,
+  "description": "記帳レビュー：freee の仕訳帳CSVから、重複候補・科目や税区分の不一致・定期取引の計上漏れなどを会社別ルールと過去の処理に照らして抽出し、対応状況を記録する",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node --test tests/core.test.js",
+    "test:ui": "node build.js && node tests/ui-flow.js",
+    "sample": "node tests/write-sample.js"
+  }
+}
